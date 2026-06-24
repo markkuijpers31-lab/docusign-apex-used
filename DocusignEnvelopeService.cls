@@ -147,16 +147,24 @@ public with sharing class DocusignEnvelopeService {
 
         // ----- E-mail teksten -----
         String caseLabel = 'Case ' + caseRecord.CaseNumber;
+        // Gebruik het Q-nummer van de gekoppelde Quote als onderwerpidentificatie;
+        // val terug op het Case-nummer als er geen Quote gekoppeld is.
+        String quoteNumber = (caseRecord.Quote__r != null && String.isNotBlank(caseRecord.Quote__r.Name))
+            ? caseRecord.Quote__r.Name
+            : caseRecord.CaseNumber;
         Boolean multipleDocuments = selectedFiles.size() > 1;
         String documentWord = multipleDocuments ? 'documenten' : 'een document';
 
-        String controleurSubject = 'Document ter controle in DocuSign - ' + caseLabel;
+        String controleurSubject = 'Document(en) ter controle - ' + quoteNumber;
         String controleurMessage =
             'Beste ' + controleur.Name + ',\n\n' +
-            'We hebben zojuist ' + documentWord + ' ter controle klaargezet in DocuSign. Gelieve deze te controleren en af te tekenen indien akkoord.\n\n' +
-            'Mocht er iets niet kloppen, laat dit dan weten via salessupport@motrac.nl';
+            'Bijgaand ontvang je ter controle het Occasion document met referentie ' + quoteNumber + '.\n\n' +
+            'Bekijk het document zorgvuldig en teken af indien alles akkoord is.\n\n' +
+            'Heb je vragen of opmerkingen over dit Occasion dossier? Neem dan contact op met de Used afdeling.\n\n' +
+            'Met vriendelijke groet,\n' +
+            'Motrac Used';
 
-        String contactSubject = 'Officieel voorstel van Motrac - ' + caseLabel;
+        String contactSubject = 'Officieel voorstel van Motrac - ' + quoteNumber;
         String contactMessage =
             'Beste ' + signerContact.Name + ',\n\n' +
             'Hierbij delen wij ons officiële voorstel. U kunt middels onderstaande knop ' +
@@ -284,7 +292,7 @@ public with sharing class DocusignEnvelopeService {
 
     private static Case loadCase(Id caseId) {
         List<Case> cases = [
-            SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c
+            SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c, Quote__c, Quote__r.Name
             FROM Case
             WHERE Id = :caseId
             WITH USER_MODE
