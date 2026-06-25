@@ -147,33 +147,29 @@ public with sharing class DocusignEnvelopeService {
 
         // ----- E-mail teksten -----
         String caseLabel = 'Case ' + caseRecord.CaseNumber;
-        // Gebruik het Q-nummer van de gekoppelde Quote als onderwerpidentificatie;
-        // val terug op het Case-nummer als er geen Quote gekoppeld is.
         String quoteNumber = (caseRecord.Quote__r != null && String.isNotBlank(caseRecord.Quote__r.Name))
             ? caseRecord.Quote__r.Name
             : caseRecord.CaseNumber;
         Boolean multipleDocuments = selectedFiles.size() > 1;
-        String documentWord = multipleDocuments ? 'documenten' : 'een document';
+        String documentWord = multipleDocuments ? 'de documenten' : 'het document';
+        String documentRef  = multipleDocuments ? 'deze documenten' : 'dit document';
 
-        String controleurSubject = 'Document(en) ter controle - ' + quoteNumber;
-        String controleurMessage =
-            'Beste ' + controleur.Name + ',\n\n' +
-            'Bijgaand ontvang je ter controle het Occasion document met referentie ' + quoteNumber + '.\n\n' +
-            'Bekijk het document zorgvuldig en teken af indien alles akkoord is.\n\n' +
-            'Heb je vragen of opmerkingen over dit Occasion dossier? Neem dan contact op met de Used afdeling.\n\n' +
-            'Met vriendelijke groet,\n' +
-            'Motrac Used';
+        String recordTypeName = (caseRecord.RecordType != null) ? caseRecord.RecordType.DeveloperName : null;
+        DocusignEmailTemplate__mdt emailTemplate = loadEmailTemplate(recordTypeName);
 
-        String contactSubject = 'Officieel voorstel van Motrac - ' + quoteNumber;
-        String contactMessage =
-            'Beste ' + signerContact.Name + ',\n\n' +
-            'Hierbij delen wij ons officiële voorstel. U kunt middels onderstaande knop ' +
-            (multipleDocuments ? 'de documenten' : 'het document') +
-            ' controleren en indien deze aan uw wensen voldoen ondertekenen.\n\n' +
-            'Mocht u nog vragen hebben over ' + (multipleDocuments ? 'deze documenten' : 'dit document') + ' dan kunt u terecht bij uw contactpersoon.\n\n' +
-            'Met vriendelijke groet,\n\n' +
-            'Namens ' + controleur.Name + '\n' +
-            'Motrac';
+        String controleurSubject = emailTemplate.ControleurSubject__c.replace('{quoteNumber}', quoteNumber);
+        String controleurMessage = emailTemplate.ControleurBody__c
+            .replace('{quoteNumber}', quoteNumber)
+            .replace('{controleurName}', controleur.Name)
+            .replace('{contactName}', signerContact.Name);
+
+        String contactSubject = emailTemplate.ContactSubject__c.replace('{quoteNumber}', quoteNumber);
+        String contactMessage = emailTemplate.ContactBody__c
+            .replace('{quoteNumber}', quoteNumber)
+            .replace('{controleurName}', controleur.Name)
+            .replace('{contactName}', signerContact.Name)
+            .replace('{documentWord}', documentWord)
+            .replace('{documentRef}', documentRef);
 
         // ----- Envelope -----
         dfsle.Envelope envelope = dfsle.EnvelopeService.getEmptyEnvelope(
@@ -292,7 +288,8 @@ public with sharing class DocusignEnvelopeService {
 
     private static Case loadCase(Id caseId) {
         List<Case> cases = [
-            SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c, Quote__c, Quote__r.Name
+            SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c, Quote__c, Quote__r.Name,
+                   RecordType.DeveloperName
             FROM Case
             WHERE Id = :caseId
             WITH USER_MODE
@@ -368,6 +365,43 @@ public with sharing class DocusignEnvelopeService {
             orderedFiles.add(file);
         }
         return orderedFiles;
+    }
+
+    /**
+     * Zoekt de e-mailtemplate op voor het opgegeven Case-recordtype.
+     * Geeft een generieke fallback terug als er geen metadata-record bestaat,
+     * zodat de service ook werkt zonder vooraf geconfigureerd record.
+     */
+    @TestVisible
+    private static DocusignEmailTemplate__mdt loadEmailTemplate(String recordTypeName) {
+        if (String.isNotBlank(recordTypeName)) {
+            List<DocusignEmailTemplate__mdt> templates = [
+                SELECT ControleurSubject__c, ControleurBody__c, ContactSubject__c, ContactBody__c
+                FROM DocusignEmailTemplate__mdt
+                WHERE RecordTypeDeveloperName__c = :recordTypeName
+                LIMIT 1
+            ];
+            if (!templates.isEmpty()) {
+                return templates[0];
+            }
+        }
+        DocusignEmailTemplate__mdt fallback = new DocusignEmailTemplate__mdt();
+        fallback.ControleurSubject__c = 'Document(en) ter controle - {quoteNumber}';
+        fallback.ControleurBody__c =
+            'Beste {controleurName},\n\n' +
+            'Bijgaand ontvang je ter controle een document met referentie {quoteNumber}.\n\n' +
+            'Bekijk het document zorgvuldig en teken af indien alles akkoord is.\n\n' +
+            'Met vriendelijke groet,\n' +
+            'Motrac';
+        fallback.ContactSubject__c = 'Officieel voorstel van Motrac - {quoteNumber}';
+        fallback.ContactBody__c =
+            'Beste {contactName},\n\n' +
+            'Hierbij delen wij ons officiële voorstel. U kunt middels onderstaande knop {documentWord} controleren en indien deze aan uw wensen voldoen ondertekenen.\n\n' +
+            'Mocht u nog vragen hebben over {documentRef} dan kunt u terecht bij uw contactpersoon.\n\n' +
+            'Met vriendelijke groet,\n\n' +
+            'Namens {controleurName}\n' +
+            'Motrac';
+        return fallback;
     }
 
     @TestVisible

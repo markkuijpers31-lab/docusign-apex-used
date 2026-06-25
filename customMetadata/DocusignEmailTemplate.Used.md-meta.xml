@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Used</label>
+    <protected>false</protected>
+    <values>
+        <field>RecordTypeDeveloperName__c</field>
+        <value xsi:type="xsd:string">Used</value>
+    </values>
+    <values>
+        <field>ControleurSubject__c</field>
+        <value xsi:type="xsd:string">Document(en) ter controle - {quoteNumber}</value>
+    </values>
+    <values>
+        <field>ControleurBody__c</field>
+        <value xsi:type="xsd:string">Beste {controleurName},
+
+Bijgaand ontvang je ter controle het Occasion document met referentie {quoteNumber}.
+
+Bekijk het document zorgvuldig en teken af indien alles akkoord is.
+
+Heb je vragen of opmerkingen over dit Occasion dossier? Neem dan contact op met de Used afdeling.
+
+Met vriendelijke groet,
+Motrac Used</value>
+    </values>
+    <values>
+        <field>ContactSubject__c</field>
+        <value xsi:type="xsd:string">Officieel voorstel van Motrac - {quoteNumber}</value>
+    </values>
+    <values>
+        <field>ContactBody__c</field>
+        <value xsi:type="xsd:string">Beste {contactName},
+
+Hierbij delen wij ons officiële voorstel. U kunt middels onderstaande knop {documentWord} controleren en indien deze aan uw wensen voldoen ondertekenen.
+
+Mocht u nog vragen hebben over {documentRef} dan kunt u terecht bij uw contactpersoon.
+
+Met vriendelijke groet,
+
+Namens {controleurName}
+Motrac</value>
+    </values>
+</CustomMetadata>
