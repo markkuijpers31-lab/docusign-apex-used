@@ -115,7 +115,7 @@ De deploy bestaat uit drie fasen:
 
 > Change Sets transporteren bestaande metadata van sandbox naar productie — ze kunnen geen code importeren vanuit GitHub. Daarom maak je eerst alle componenten aan in de sandbox, waarna je ze via een Change Set naar productie kunt sturen.
 
-> ⚠️ **Volgorde is cruciaal:** maak het **Custom Metadata Type (A1) vóór de Apex-classes (A2)** aan. `DocusignEnvelopeService` verwijst naar het type `DocusignEmailTemplate__mdt` — als dat nog niet bestaat, geeft Salesforce een compile-fout bij het opslaan van de class.
+> **Aanbevolen volgorde:** maak het **Custom Metadata Type (A1) vóór de Apex-classes (A2)** aan. De code lost het type dynamisch op en compileert ook zonder het type, maar de feature werkt pas als het type én een metadata-record bestaan.
 
 Alle code die je nodig hebt staat in deze GitHub-repository. Open de bestanden in GitHub en kopieer de volledige inhoud.
 
@@ -129,9 +129,11 @@ Vul in:
 |---|---|
 | **Label** | `Docusign Email Template` |
 | **Plural Label** | `Docusign Email Templates` |
-| **Object Name** | `DocusignEmailTemplate` (wordt automatisch ingevuld) |
+| **Object Name** | `DocusignEmailTemplate` |
 | **Description** | `E-mailteksten per Case RecordType voor DocuSign-envelopes.` |
 | **Visibility** | Public |
+
+> **Let op de Object Name.** Salesforce vult dit veld automatisch op basis van het label en zet spaties om naar underscores → `Docusign_Email_Template`. **Verwijder de underscores handmatig** zodat er `DocusignEmailTemplate` staat (API-naam wordt dan `DocusignEmailTemplate__mdt`). De code accepteert ook de underscore-variant `Docusign_Email_Template__mdt`, maar de naam zonder underscores is aanbevolen voor consistentie met deze repo.
 
 Klik op **Save**.
 
@@ -440,6 +442,8 @@ De code leest de templatevelden dynamisch en accepteert zowel de voorkeursnamen 
 
 **Oplossing:** wijkt een veldnaam hiervan af, bewerk dan het veld via **Edit** en zet de **Field Name** naar één van de geaccepteerde namen, of verwijder en maak opnieuw aan.
 
+Controleer ook de **Object Name** van het type zelf: de code accepteert `DocusignEmailTemplate__mdt` en `Docusign_Email_Template__mdt`. Heet het type anders, hernoem het of pas de Object Name aan.
+
 ### Het "New record"-formulier toont alleen Label en Name, geen inhoudsvelden
 
 De custom velden zijn nog niet aangemaakt op het Custom Metadata Type — vermoedelijk zijn ze per ongeluk als *records* aangemaakt in plaats van als *velden*.
@@ -451,11 +455,11 @@ De custom velden zijn nog niet aangemaakt op het Custom Metadata Type — vermoe
 4. Maak in de related list **Custom Fields** de vijf velden aan (zie stap A1b)
 5. Ga terug naar **Manage Records → New** — de velden verschijnen nu op het formulier
 
-### Class opslaan mislukt met "Invalid type: DocusignEmailTemplate__mdt"
+### Compile-fout "Variable does not exist: DocusignEmailTemplate__mdt.SObjectType"
 
-De Apex-class `DocusignEnvelopeService` verwijst naar het Custom Metadata Type `DocusignEmailTemplate__mdt`, maar dat type bestaat nog niet in de sandbox.
+Een oudere versie van `DocusignEnvelopeService` verwees statisch naar het type. De huidige versie lost het type dynamisch op via `getGlobalDescribe()` en heeft deze statische verwijzing niet meer.
 
-**Oplossing:** voer eerst stap A1 en A1b uit (Custom Metadata Type + velden aanmaken). Sla daarna de class opnieuw op — Salesforce hercompileert automatisch zodra het type bestaat.
+**Oplossing:** haal de meest recente `DocusignEnvelopeService.cls` uit GitHub en sla die opnieuw op. De class compileert dan ongeacht of het type bestaat of hoe het heet (`DocusignEmailTemplate__mdt` of `Docusign_Email_Template__mdt`).
 
 ### Class opslaan mislukt met "Type name already in use: DocusignCaseConfirmController"
 

@@ -393,6 +393,16 @@ public with sharing class DocusignEnvelopeService {
     }
 
     /**
+     * Mogelijke API-namen van het Custom Metadata Type zelf, in volgorde van
+     * voorkeur. Net als bij de velden kan een spatie in het label de API-naam
+     * met underscores opleveren (Docusign_Email_Template__mdt). Door het type
+     * dynamisch op te lossen, blijft de code compileren ongeacht de naam.
+     */
+    private static final List<String> TYPE_NAME_CANDIDATES = new List<String>{
+        'DocusignEmailTemplate__mdt', 'Docusign_Email_Template__mdt'
+    };
+
+    /**
      * Mogelijke veld-API-namen per logisch veld, in volgorde van voorkeur.
      * De eerste die in de org bestaat wordt gebruikt. Dit vangt verschillen op
      * die ontstaan wanneer een admin de velden handmatig aanmaakt: Salesforce
@@ -410,12 +420,26 @@ public with sharing class DocusignEnvelopeService {
         };
 
     /**
-     * Bepaalt voor elk logisch veld de werkelijke API-naam zoals die in deze org
+     * Zoekt het Custom Metadata Type op via getGlobalDescribe(), zodat er geen
+     * statische verwijzing naar de typenaam in de code staat. Geeft null terug
+     * als geen van de kandidaat-namen bestaat.
+     */
+    private static Schema.SObjectType resolveTemplateType() {
+        Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+        for (String candidate : TYPE_NAME_CANDIDATES) {
+            Schema.SObjectType sObjectType = globalDescribe.get(candidate.toLowerCase());
+            if (sObjectType != null) {
+                return sObjectType;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Bepaalt voor elk logisch veld de werkelijke API-naam zoals die op het type
      * bestaat. Logische velden die niet gevonden worden, ontbreken in de Map.
      */
-    private static Map<String, String> resolveTemplateFields() {
-        Map<String, Schema.SObjectField> fieldMap =
-            DocusignEmailTemplate__mdt.SObjectType.getDescribe().fields.getMap();
+    private static Map<String, String> resolveTemplateFields(Map<String, Schema.SObjectField> fieldMap) {
         Map<String, String> resolved = new Map<String, String>();
         for (String logicalName : TEMPLATE_FIELD_CANDIDATES.keySet()) {
             for (String candidate : TEMPLATE_FIELD_CANDIDATES.get(logicalName)) {
@@ -429,18 +453,26 @@ public with sharing class DocusignEnvelopeService {
     }
 
     /**
-     * Zoekt de e-mailtemplate op voor het opgegeven Case-recordtype. De velden
-     * worden dynamisch gelezen, zodat afwijkende API-namen geen compile- of
-     * runtime-fout veroorzaken. Geeft een generieke fallback terug als er geen
-     * (volledig) metadata-record bestaat, zodat de service altijd werkt.
+     * Zoekt de e-mailtemplate op voor het opgegeven Case-recordtype. Zowel het
+     * type als de velden worden dynamisch opgelost, zodat afwijkende API-namen
+     * geen compile- of runtime-fout veroorzaken. Geeft een generieke fallback
+     * terug als er geen (volledig) metadata-record bestaat, zodat de service
+     * altijd werkt.
      */
     @TestVisible
     private static EmailTemplate loadEmailTemplate(String recordTypeName) {
         EmailTemplate template = defaultTemplate();
 
-        Map<String, String> fields = resolveTemplateFields();
-        Boolean canQuery = String.isNotBlank(recordTypeName)
-            && fields.containsKey('RecordTypeDeveloperName')
+        Schema.SObjectType templateType = resolveTemplateType();
+        if (String.isBlank(recordTypeName) || templateType == null) {
+            return template;
+        }
+
+        Schema.DescribeSObjectResult typeDescribe = templateType.getDescribe();
+        String typeName = typeDescribe.getName();
+        Map<String, String> fields = resolveTemplateFields(typeDescribe.fields.getMap());
+
+        Boolean canQuery = fields.containsKey('RecordTypeDeveloperName')
             && fields.containsKey('ControleurSubject')
             && fields.containsKey('ControleurBody')
             && fields.containsKey('ContactSubject')
@@ -450,7 +482,7 @@ public with sharing class DocusignEnvelopeService {
             String soql =
                 'SELECT ' + fields.get('ControleurSubject') + ', ' + fields.get('ControleurBody') +
                 ', ' + fields.get('ContactSubject') + ', ' + fields.get('ContactBody') +
-                ' FROM DocusignEmailTemplate__mdt' +
+                ' FROM ' + typeName +
                 ' WHERE ' + fields.get('RecordTypeDeveloperName') + ' = :recordTypeName' +
                 ' LIMIT 1';
             List<SObject> rows = Database.query(soql);
