@@ -156,13 +156,11 @@ Navigeer naar de **type-definitiepagina** (niet Manage Records):
 | `ContactSubject` | Text | 255 |
 | `ContactBody` | Long Text Area | 32768 |
 
-> ⚠️ **Geen spaties in het Field Label tijdens aanmaken.** Salesforce zet spaties in het label automatisch om naar underscores in de API-naam. Een label "Controleur Subject" levert API-naam `Controleur_Subject__c` op — maar de code zoekt `ControleurSubject__c` **zonder** underscore, en dat geeft een compile-fout.
+> **Tip — Field Label zonder spaties.** Salesforce zet spaties in het label om naar underscores in de API-naam. Een label "Controleur Subject" levert API-naam `Controleur_Subject__c` op. Typ het **Field Label** zónder spaties (bijv. `ControleurSubject`) om de voorkeursnaam `ControleurSubject__c` te krijgen.
 >
-> **Truc:** typ het **Field Label** zónder spaties (bijv. `ControleurSubject`). Dan vult Salesforce de **Field Name** (API-naam) meteen correct als `ControleurSubject`. Controleer voor het opslaan dat de Field Name exact overeenkomt met de tabel hierboven. De `__c`-suffix voegt Salesforce zelf toe.
+> **De code is tolerant:** `DocusignEnvelopeService` leest de velden dynamisch en accepteert zowel de voorkeursnaam (`ControleurSubject__c`) als de underscore-variant (`Controleur_Subject__c`). Je hoeft bestaande velden met underscores dus niet per se te hernoemen. De voorkeursnamen zonder underscore blijven aanbevolen voor consistentie met de velddefinities in deze repo.
 
-Na het aanmaken zie je deze vijf velden terug in de **Custom Fields** related list met API-namen `RecordTypeDeveloperName__c`, `ControleurSubject__c`, `ControleurBody__c`, `ContactSubject__c` en `ContactBody__c`. Pas als ze hier exact zo staan, verschijnen ze op het record-formulier in stap A4 en compileert de Apex-code.
-
-> **Als de velden al bestaan**, controleer dan of de API-namen exact kloppen (geen underscores tussen de woorden, geen typefouten). Zo niet: bewerk elk veld via **Edit** en corrigeer de **Field Name**, of verwijder en maak opnieuw aan.
+Na het aanmaken zie je de vijf velden terug in de **Custom Fields** related list. Pas als ze hier staan, verschijnen ze op het record-formulier in stap A4.
 
 #### A2 — Apex Classes aanmaken
 
@@ -426,14 +424,21 @@ Doorloop deze checklist nadat de Change Set is gedeployed:
 
 ## Troubleshooting
 
-### Compile-fout "Variable does not exist: ControleurSubject__c" (of een ander veld)
+### E-mails bevatten fallback-teksten terwijl het metadata-record wél bestaat
 
-De velden bestaan wel op het Custom Metadata Type, maar de **API-namen kloppen niet**. Meestal komt dit doordat het Field Label met spaties is ingevoerd, waardoor Salesforce underscores in de API-naam zet (`Controleur_Subject__c` in plaats van `ControleurSubject__c`).
+De code leest de templatevelden dynamisch en accepteert zowel de voorkeursnamen (`ControleurSubject__c`) als de underscore-variant (`Controleur_Subject__c`, en `Contac_Body__c` voor de bodyvelden). Krijg je tóch de generieke fallback-teksten terwijl er een record bestaat, dan heet een veld waarschijnlijk iets dat buiten deze varianten valt.
 
-**Controleer:** Setup → Custom Metadata Types → klik `Docusign Email Template` → related list **Custom Fields** → vergelijk de **API Name**-kolom exact met:
-`RecordTypeDeveloperName__c`, `ControleurSubject__c`, `ControleurBody__c`, `ContactSubject__c`, `ContactBody__c`
+**Controleer:** Setup → Custom Metadata Types → klik `Docusign Email Template` → related list **Custom Fields** → vergelijk de **API Name**-kolom met één van de geaccepteerde varianten:
 
-**Oplossing:** klik per afwijkend veld op **Edit** en corrigeer de **Field Name** (verwijder underscores tussen de woorden, fix typefouten). Lukt bewerken niet, verwijder het veld en maak het opnieuw aan met het Field Label zónder spaties.
+| Logisch veld | Geaccepteerde API-namen |
+|---|---|
+| RecordType-sleutel | `RecordTypeDeveloperName__c` of `Record_Type_Developer_Name__c` |
+| Onderwerp controleur | `ControleurSubject__c` of `Controleur_Subject__c` |
+| Body controleur | `ControleurBody__c` of `Controleur_Body__c` |
+| Onderwerp klant | `ContactSubject__c` of `Contact_Subject__c` |
+| Body klant | `ContactBody__c`, `Contact_Body__c` of `Contac_Body__c` |
+
+**Oplossing:** wijkt een veldnaam hiervan af, bewerk dan het veld via **Edit** en zet de **Field Name** naar één van de geaccepteerde namen, of verwijder en maak opnieuw aan.
 
 ### Het "New record"-formulier toont alleen Label en Name, geen inhoudsvelden
 

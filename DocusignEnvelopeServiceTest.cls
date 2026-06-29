@@ -345,20 +345,20 @@ private class DocusignEnvelopeServiceTest {
     @isTest
     static void loadEmailTemplate_nullRecordType_geeftFallback() {
         Test.startTest();
-        DocusignEmailTemplate__mdt tmpl = DocusignEnvelopeService.loadEmailTemplate(null);
+        DocusignEnvelopeService.EmailTemplate tmpl = DocusignEnvelopeService.loadEmailTemplate(null);
         Test.stopTest();
-        System.assert(String.isNotBlank(tmpl.ControleurSubject__c), 'Fallback moet controleur-onderwerp hebben.');
-        System.assert(String.isNotBlank(tmpl.ControleurBody__c), 'Fallback moet controleur-body hebben.');
-        System.assert(String.isNotBlank(tmpl.ContactSubject__c), 'Fallback moet contact-onderwerp hebben.');
-        System.assert(String.isNotBlank(tmpl.ContactBody__c), 'Fallback moet contact-body hebben.');
+        System.assert(String.isNotBlank(tmpl.controleurSubject), 'Fallback moet controleur-onderwerp hebben.');
+        System.assert(String.isNotBlank(tmpl.controleurBody), 'Fallback moet controleur-body hebben.');
+        System.assert(String.isNotBlank(tmpl.contactSubject), 'Fallback moet contact-onderwerp hebben.');
+        System.assert(String.isNotBlank(tmpl.contactBody), 'Fallback moet contact-body hebben.');
     }
 
     @isTest
     static void loadEmailTemplate_onbekendType_geeftFallback() {
         Test.startTest();
-        DocusignEmailTemplate__mdt tmpl = DocusignEnvelopeService.loadEmailTemplate('NietBestaandeAfdeling');
+        DocusignEnvelopeService.EmailTemplate tmpl = DocusignEnvelopeService.loadEmailTemplate('NietBestaandeAfdeling');
         Test.stopTest();
-        System.assert(String.isNotBlank(tmpl.ControleurSubject__c), 'Fallback verwacht voor onbekend recordtype.');
+        System.assert(String.isNotBlank(tmpl.controleurSubject), 'Fallback verwacht voor onbekend recordtype.');
     }
 
     // ---------------------------------------------------------------

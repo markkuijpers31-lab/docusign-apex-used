@@ -169,16 +169,16 @@ public with sharing class DocusignEnvelopeService {
         String documentRef  = multipleDocuments ? 'deze documenten' : 'dit document';
 
         String recordTypeName = (caseRecord.RecordType != null) ? caseRecord.RecordType.DeveloperName : null;
-        DocusignEmailTemplate__mdt emailTemplate = loadEmailTemplate(recordTypeName);
+        EmailTemplate emailTemplate = loadEmailTemplate(recordTypeName);
 
-        String controleurSubject = emailTemplate.ControleurSubject__c.replace('{quoteNumber}', quoteNumber);
-        String controleurMessage = emailTemplate.ControleurBody__c
+        String controleurSubject = emailTemplate.controleurSubject.replace('{quoteNumber}', quoteNumber);
+        String controleurMessage = emailTemplate.controleurBody
             .replace('{quoteNumber}', quoteNumber)
             .replace('{controleurName}', controleur.Name)
             .replace('{contactName}', signerContact.Name);
 
-        String contactSubject = emailTemplate.ContactSubject__c.replace('{quoteNumber}', quoteNumber);
-        String contactMessage = emailTemplate.ContactBody__c
+        String contactSubject = emailTemplate.contactSubject.replace('{quoteNumber}', quoteNumber);
+        String contactMessage = emailTemplate.contactBody
             .replace('{quoteNumber}', quoteNumber)
             .replace('{controleurName}', controleur.Name)
             .replace('{contactName}', signerContact.Name)
@@ -380,40 +380,119 @@ public with sharing class DocusignEnvelopeService {
     }
 
     /**
-     * Zoekt de e-mailtemplate op voor het opgegeven Case-recordtype.
-     * Geeft een generieke fallback terug als er geen metadata-record bestaat,
-     * zodat de service ook werkt zonder vooraf geconfigureerd record.
+     * E-mailtemplate als plain wrapper, losgekoppeld van de exacte veld-API-namen
+     * op DocusignEmailTemplate__mdt. Hierdoor compileert en werkt de service
+     * ongeacht of de velden met of zonder underscore zijn aangemaakt
+     * (bv. ControleurSubject__c vs. Controleur_Subject__c).
      */
-    @TestVisible
-    private static DocusignEmailTemplate__mdt loadEmailTemplate(String recordTypeName) {
-        if (String.isNotBlank(recordTypeName)) {
-            List<DocusignEmailTemplate__mdt> templates = [
-                SELECT ControleurSubject__c, ControleurBody__c, ContactSubject__c, ContactBody__c
-                FROM DocusignEmailTemplate__mdt
-                WHERE RecordTypeDeveloperName__c = :recordTypeName
-                LIMIT 1
-            ];
-            if (!templates.isEmpty()) {
-                return templates[0];
+    public class EmailTemplate {
+        public String controleurSubject;
+        public String controleurBody;
+        public String contactSubject;
+        public String contactBody;
+    }
+
+    /**
+     * Mogelijke veld-API-namen per logisch veld, in volgorde van voorkeur.
+     * De eerste die in de org bestaat wordt gebruikt. Dit vangt verschillen op
+     * die ontstaan wanneer een admin de velden handmatig aanmaakt: Salesforce
+     * zet spaties in het Field Label om naar underscores in de API-naam, en er
+     * kan een typefout insluipen (Contac_Body__c). De voorkeursnaam (zonder
+     * underscore) komt overeen met de velddefinities in deze repo.
+     */
+    private static final Map<String, List<String>> TEMPLATE_FIELD_CANDIDATES =
+        new Map<String, List<String>>{
+            'RecordTypeDeveloperName' => new List<String>{ 'RecordTypeDeveloperName__c', 'Record_Type_Developer_Name__c' },
+            'ControleurSubject'       => new List<String>{ 'ControleurSubject__c', 'Controleur_Subject__c' },
+            'ControleurBody'          => new List<String>{ 'ControleurBody__c', 'Controleur_Body__c' },
+            'ContactSubject'          => new List<String>{ 'ContactSubject__c', 'Contact_Subject__c' },
+            'ContactBody'             => new List<String>{ 'ContactBody__c', 'Contact_Body__c', 'Contac_Body__c' }
+        };
+
+    /**
+     * Bepaalt voor elk logisch veld de werkelijke API-naam zoals die in deze org
+     * bestaat. Logische velden die niet gevonden worden, ontbreken in de Map.
+     */
+    private static Map<String, String> resolveTemplateFields() {
+        Map<String, Schema.SObjectField> fieldMap =
+            DocusignEmailTemplate__mdt.SObjectType.getDescribe().fields.getMap();
+        Map<String, String> resolved = new Map<String, String>();
+        for (String logicalName : TEMPLATE_FIELD_CANDIDATES.keySet()) {
+            for (String candidate : TEMPLATE_FIELD_CANDIDATES.get(logicalName)) {
+                if (fieldMap.containsKey(candidate.toLowerCase())) {
+                    resolved.put(logicalName, candidate);
+                    break;
+                }
             }
         }
-        DocusignEmailTemplate__mdt fallback = new DocusignEmailTemplate__mdt();
-        fallback.ControleurSubject__c = 'Document(en) ter controle - {quoteNumber}';
-        fallback.ControleurBody__c =
+        return resolved;
+    }
+
+    /**
+     * Zoekt de e-mailtemplate op voor het opgegeven Case-recordtype. De velden
+     * worden dynamisch gelezen, zodat afwijkende API-namen geen compile- of
+     * runtime-fout veroorzaken. Geeft een generieke fallback terug als er geen
+     * (volledig) metadata-record bestaat, zodat de service altijd werkt.
+     */
+    @TestVisible
+    private static EmailTemplate loadEmailTemplate(String recordTypeName) {
+        EmailTemplate template = defaultTemplate();
+
+        Map<String, String> fields = resolveTemplateFields();
+        Boolean canQuery = String.isNotBlank(recordTypeName)
+            && fields.containsKey('RecordTypeDeveloperName')
+            && fields.containsKey('ControleurSubject')
+            && fields.containsKey('ControleurBody')
+            && fields.containsKey('ContactSubject')
+            && fields.containsKey('ContactBody');
+
+        if (canQuery) {
+            String soql =
+                'SELECT ' + fields.get('ControleurSubject') + ', ' + fields.get('ControleurBody') +
+                ', ' + fields.get('ContactSubject') + ', ' + fields.get('ContactBody') +
+                ' FROM DocusignEmailTemplate__mdt' +
+                ' WHERE ' + fields.get('RecordTypeDeveloperName') + ' = :recordTypeName' +
+                ' LIMIT 1';
+            List<SObject> rows = Database.query(soql);
+            if (!rows.isEmpty()) {
+                SObject row = rows[0];
+                // Alleen niet-lege waarden overschrijven de fallback, zodat een
+                // half ingevuld record niet tot lege e-mails leidt.
+                String cs = (String) row.get(fields.get('ControleurSubject'));
+                String cb = (String) row.get(fields.get('ControleurBody'));
+                String ks = (String) row.get(fields.get('ContactSubject'));
+                String kb = (String) row.get(fields.get('ContactBody'));
+                if (String.isNotBlank(cs)) template.controleurSubject = cs;
+                if (String.isNotBlank(cb)) template.controleurBody = cb;
+                if (String.isNotBlank(ks)) template.contactSubject = ks;
+                if (String.isNotBlank(kb)) template.contactBody = kb;
+            }
+        }
+        return template;
+    }
+
+    /**
+     * Generieke fallback-teksten; gebruikt als er geen (volledig) metadata-record
+     * bestaat voor het recordtype.
+     */
+    private static EmailTemplate defaultTemplate() {
+        EmailTemplate template = new EmailTemplate();
+        template.controleurSubject = 'Document(en) ter controle - {quoteNumber}';
+        template.controleurBody =
             'Beste {controleurName},\n\n' +
             'Bijgaand ontvang je ter controle een document met referentie {quoteNumber}.\n\n' +
             'Bekijk het document zorgvuldig en teken af indien alles akkoord is.\n\n' +
             'Met vriendelijke groet,\n' +
             'Motrac';
-        fallback.ContactSubject__c = 'Officieel voorstel van Motrac - {quoteNumber}';
-        fallback.ContactBody__c =
+        template.contactSubject = 'Officieel voorstel van Motrac - {quoteNumber}';
+        template.contactBody =
             'Beste {contactName},\n\n' +
             'Hierbij delen wij ons officiële voorstel. U kunt middels onderstaande knop {documentWord} controleren en indien deze aan uw wensen voldoen ondertekenen.\n\n' +
             'Mocht u nog vragen hebben over {documentRef} dan kunt u terecht bij uw contactpersoon.\n\n' +
             'Met vriendelijke groet,\n\n' +
             'Namens {controleurName}\n' +
             'Motrac';
-        return fallback;
+        return template;
     }
 
     @TestVisible
