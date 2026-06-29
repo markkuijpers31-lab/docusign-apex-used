@@ -148,19 +148,21 @@ Navigeer naar de **type-definitiepagina** (niet Manage Records):
 3. Scroll naar de related list **Custom Fields** (niet de "Manage Records"-knop bovenaan)
 4. Klik in die related list op **New** en maak elk van de volgende vijf velden aan:
 
-| Veldnaam (Field Name) | Type | Lengte |
+| Field Name (API-naam, exact) | Type | Lengte |
 |---|---|---|
-| `RecordTypeDeveloperName__c` | Text | 80 |
-| `ControleurSubject__c` | Text | 255 |
-| `ControleurBody__c` | Long Text Area | 32768 |
-| `ContactSubject__c` | Text | 255 |
-| `ContactBody__c` | Long Text Area | 32768 |
+| `RecordTypeDeveloperName` | Text | 80 |
+| `ControleurSubject` | Text | 255 |
+| `ControleurBody` | Long Text Area | 32768 |
+| `ContactSubject` | Text | 255 |
+| `ContactBody` | Long Text Area | 32768 |
 
-Na het aanmaken zie je deze vijf velden terug in de **Custom Fields** related list. Pas als ze hier staan, verschijnen ze op het record-formulier in stap A4.
+> ⚠️ **Geen spaties in het Field Label tijdens aanmaken.** Salesforce zet spaties in het label automatisch om naar underscores in de API-naam. Een label "Controleur Subject" levert API-naam `Controleur_Subject__c` op — maar de code zoekt `ControleurSubject__c` **zonder** underscore, en dat geeft een compile-fout.
+>
+> **Truc:** typ het **Field Label** zónder spaties (bijv. `ControleurSubject`). Dan vult Salesforce de **Field Name** (API-naam) meteen correct als `ControleurSubject`. Controleer voor het opslaan dat de Field Name exact overeenkomt met de tabel hierboven. De `__c`-suffix voegt Salesforce zelf toe.
 
-Maak elk veld afzonderlijk aan via **New Field**. De `__c`-suffix voegt Salesforce automatisch toe.
+Na het aanmaken zie je deze vijf velden terug in de **Custom Fields** related list met API-namen `RecordTypeDeveloperName__c`, `ControleurSubject__c`, `ControleurBody__c`, `ContactSubject__c` en `ContactBody__c`. Pas als ze hier exact zo staan, verschijnen ze op het record-formulier in stap A4 en compileert de Apex-code.
 
-> **Als de velden al bestaan**, sla deze stap over.
+> **Als de velden al bestaan**, controleer dan of de API-namen exact kloppen (geen underscores tussen de woorden, geen typefouten). Zo niet: bewerk elk veld via **Edit** en corrigeer de **Field Name**, of verwijder en maak opnieuw aan.
 
 #### A2 — Apex Classes aanmaken
 
@@ -423,6 +425,15 @@ Doorloop deze checklist nadat de Change Set is gedeployed:
 ---
 
 ## Troubleshooting
+
+### Compile-fout "Variable does not exist: ControleurSubject__c" (of een ander veld)
+
+De velden bestaan wel op het Custom Metadata Type, maar de **API-namen kloppen niet**. Meestal komt dit doordat het Field Label met spaties is ingevoerd, waardoor Salesforce underscores in de API-naam zet (`Controleur_Subject__c` in plaats van `ControleurSubject__c`).
+
+**Controleer:** Setup → Custom Metadata Types → klik `Docusign Email Template` → related list **Custom Fields** → vergelijk de **API Name**-kolom exact met:
+`RecordTypeDeveloperName__c`, `ControleurSubject__c`, `ControleurBody__c`, `ContactSubject__c`, `ContactBody__c`
+
+**Oplossing:** klik per afwijkend veld op **Edit** en corrigeer de **Field Name** (verwijder underscores tussen de woorden, fix typefouten). Lukt bewerken niet, verwijder het veld en maak het opnieuw aan met het Field Label zónder spaties.
 
 ### Het "New record"-formulier toont alleen Label en Name, geen inhoudsvelden
 
