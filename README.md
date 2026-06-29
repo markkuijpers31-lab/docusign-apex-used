@@ -181,7 +181,9 @@ Verwijder de standaardtekst in het editor-venster en plak de volledige inhoud va
 
 #### A4 — Metadata-records aanmaken
 
-Ga naar **Setup → Custom Metadata Types → Docusign Email Template → Manage Records**.
+> **Lightning-navigatie:** "Manage Records" staat niet in de lijst van Custom Metadata Types, maar op de detailpagina. Ga naar **Setup → Custom Metadata Types**, zoek in de lijst naar *Docusign Email Template* en **klik op de naam/label**. Op de detailpagina die dan opent staat de knop **Manage Records** rechtsbovenaan of als link onder de veldentabel.
+
+Ga via bovenstaande stap naar de Manage Records pagina van *Docusign Email Template*.
 
 **Record voor Used afdeling (nieuw):**
 
@@ -298,7 +300,7 @@ Klik op **Deploy**. Bevestig de actie. De deploy duurt doorgaans enkele minuten.
 #### Deploy verifiëren
 
 - **Setup → Apex Classes** → zoek op `DocusignEnvelopeService` — de klasse is zichtbaar met een recente wijzigingsdatum
-- **Setup → Custom Metadata Types → Docusign Email Template → Manage Records** — beide records (`Used` en het Sales Nieuw record) zijn aanwezig
+- **Setup → Custom Metadata Types → klik op label *Docusign Email Template* → Manage Records** — beide records (`Used` en het Sales Nieuw record) zijn aanwezig
 
 ---
 
@@ -345,7 +347,7 @@ Na de eenmalige deploy kan een admin zelfstandig een nieuwe afdeling configurere
 
 ### Stap 2 — Metadata-record aanmaken
 
-1. **Setup → Custom Metadata Types → Docusign Email Template → Manage Records → New**
+1. **Setup → Custom Metadata Types** → klik op de naam **Docusign Email Template** in de lijst → klik op **Manage Records** → klik op **New**
 2. Vul in:
 
 | Veld | Waarde |
@@ -448,7 +450,7 @@ Sla de klasse op, voer de tests opnieuw uit en verwerk de fix daarna in een nieu
 De service kon geen metadata-record vinden voor het RecordType van de Case.
 
 **Controleer:**
-1. **Setup → Custom Metadata Types → Docusign Email Template → Manage Records** — staat er een record voor deze afdeling?
+1. **Setup → Custom Metadata Types → klik op label *Docusign Email Template* → Manage Records** — staat er een record voor deze afdeling?
 2. Open het record en controleer `RecordTypeDeveloperName__c`
 3. Vergelijk de waarde exact (hoofdlettergevoelig) met **Setup → Object Manager → Case → Record Types → [jouw recordtype] → Record Type Name**
 4. Pas de waarde aan als deze niet overeenkomt en sla op — de correctie is direct actief
