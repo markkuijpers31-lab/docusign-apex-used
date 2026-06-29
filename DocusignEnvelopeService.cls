@@ -2,6 +2,13 @@ public with sharing class DocusignEnvelopeService {
 
     private static final Integer MAX_CHECKBOX_ANCHORS = 200;
 
+    // Quote__c is een optioneel lookup-veld op Case dat niet in elke org of sandbox
+    // aanwezig is. De check via Schema voorkomt compile- en runtime-fouten in omgevingen
+    // zonder dit veld; het Q-nummer valt dan automatisch terug op CaseNumber.
+    @TestVisible
+    private static final Boolean HAS_QUOTE_FIELD =
+        Schema.SObjectType.Case.fields.getMap().containsKey('quote__c');
+
     /**
      * Toegestane bestandstypen voor verzending via DocuSign. Centrale bron van
      * waarheid; de controllers verwijzen hierheen i.p.v. een eigen lijst te
@@ -147,9 +154,16 @@ public with sharing class DocusignEnvelopeService {
 
         // ----- E-mail teksten -----
         String caseLabel = 'Case ' + caseRecord.CaseNumber;
-        String quoteNumber = (caseRecord.Quote__r != null && String.isNotBlank(caseRecord.Quote__r.Name))
-            ? caseRecord.Quote__r.Name
-            : caseRecord.CaseNumber;
+        String quoteNumber = caseRecord.CaseNumber;
+        if (HAS_QUOTE_FIELD) {
+            SObject quoteRef = caseRecord.getSObject('Quote__r');
+            if (quoteRef != null) {
+                String qName = (String) quoteRef.get('Name');
+                if (String.isNotBlank(qName)) {
+                    quoteNumber = qName;
+                }
+            }
+        }
         Boolean multipleDocuments = selectedFiles.size() > 1;
         String documentWord = multipleDocuments ? 'de documenten' : 'het document';
         String documentRef  = multipleDocuments ? 'deze documenten' : 'dit document';
@@ -287,14 +301,12 @@ public with sharing class DocusignEnvelopeService {
     // ------------------------------------------------------------------
 
     private static Case loadCase(Id caseId) {
-        List<Case> cases = [
-            SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c, Quote__c, Quote__r.Name,
-                   RecordType.DeveloperName
-            FROM Case
-            WHERE Id = :caseId
-            WITH USER_MODE
-            LIMIT 1
-        ];
+        String optionalQuoteFields = HAS_QUOTE_FIELD ? ', Quote__c, Quote__r.Name' : '';
+        String soql =
+            'SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c, RecordType.DeveloperName' +
+            optionalQuoteFields +
+            ' FROM Case WHERE Id = :caseId WITH USER_MODE LIMIT 1';
+        List<Case> cases = Database.query(soql);
         if (cases.isEmpty()) {
             throw new DocusignSendException('Case niet gevonden of geen toegang.');
         }

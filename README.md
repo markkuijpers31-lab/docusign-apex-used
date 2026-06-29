@@ -77,8 +77,8 @@ Controleer de volgende punten **vóór** je begint:
 - [ ] Er is een **Deployment Connection** ingesteld van de sandbox naar productie
       (Setup → Deployment Settings → klik op de sandbox → vink "Allow Inbound Changes" aan)
 - [ ] Custom veld `Ter_controle_van__c` (User lookup) bestaat op het Case-object
-- [ ] Custom object `Quote__c` bestaat met een `Name`-veld en is via een lookup gekoppeld aan Case
 - [ ] Case RecordType `Used` bestaat in de org (DeveloperName: `Used`)
+- [ ] *(Optioneel)* Custom lookup-veld `Quote__c` op Case gekoppeld aan `Quote__c`-object — als aanwezig, gebruikt de service het Q-nummer als referentie in e-mails; anders valt het terug op het CaseNumber
 - [ ] Je weet wat de exacte `DeveloperName` is van het Sales Nieuw RecordType
       (Setup → Object Manager → Case → Record Types → klik op het recordtype → zie "Record Type Name")
 
@@ -115,33 +115,11 @@ De deploy bestaat uit drie fasen:
 
 > Change Sets transporteren bestaande metadata van sandbox naar productie — ze kunnen geen code importeren vanuit GitHub. Daarom maak je eerst alle componenten aan in de sandbox, waarna je ze via een Change Set naar productie kunt sturen.
 
+> ⚠️ **Volgorde is cruciaal:** maak het **Custom Metadata Type (A1) vóór de Apex-classes (A2)** aan. `DocusignEnvelopeService` verwijst naar het type `DocusignEmailTemplate__mdt` — als dat nog niet bestaat, geeft Salesforce een compile-fout bij het opslaan van de class.
+
 Alle code die je nodig hebt staat in deze GitHub-repository. Open de bestanden in GitHub en kopieer de volledige inhoud.
 
-#### A1 — Apex Classes aanmaken
-
-Ga in de **sandbox** naar **Setup → Apex Classes → New** en maak de volgende vier classes aan. Kopieer de volledige code van elk bestand uit GitHub en plak deze in het editor-venster. Klik daarna op **Save**.
-
-| Class | Bestand in GitHub |
-|---|---|
-| `DocusignEnvelopeService` | `DocusignEnvelopeService.cls` |
-| `DocusignEnvelopeServiceTest` | `DocusignEnvelopeServiceTest.cls` |
-| `DocusignCaseConfirmController` | `DocusignCaseConfirmController.cls` |
-| `DocusignCaseQuickActionController` | `DocusignCaseQuickActionController.cls` |
-
-> **Tip:** als de sandbox al classes heeft van de Sales Nieuw implementatie, open dan de bestaande class via Setup → Apex Classes → klik op de naam → **Edit**, en vervang de volledige inhoud door de nieuwe code. Zo overschrijf je de juiste versie.
-
-#### A2 — Visualforce Page aanmaken
-
-Ga naar **Setup → Visualforce Pages → New**.
-
-- **Label:** `Docusign Case Confirm`
-- **Name:** `DocusignCaseConfirm` (wordt automatisch ingevuld)
-
-Verwijder de standaardtekst in het editor-venster en plak de volledige inhoud van `DocusignCaseConfirm.page` uit GitHub. Klik op **Save**.
-
-> Als de pagina al bestaat: klik op de naam → **Edit** → vervang de volledige inhoud.
-
-#### A3 — Custom Metadata Type aanmaken
+#### A1 — Custom Metadata Type aanmaken
 
 Ga naar **Setup → Custom Metadata Types → New**.
 
@@ -157,9 +135,9 @@ Vul in:
 
 Klik op **Save**.
 
-> **Als het type al bestaat**, sla deze stap dan over en ga direct naar A4.
+> **Als het type al bestaat**, sla deze stap over en ga direct naar A1b om te controleren of de velden aanwezig zijn.
 
-#### A3b — Velden aanmaken op het Custom Metadata Type
+#### A1b — Velden aanmaken op het Custom Metadata Type
 
 Ga naar **Setup → Custom Metadata Types → Docusign Email Template → Fields → New** en maak de volgende vijf velden aan:
 
@@ -173,7 +151,33 @@ Ga naar **Setup → Custom Metadata Types → Docusign Email Template → Fields
 
 Maak elk veld afzonderlijk aan via **New Field**. De `__c`-suffix voegt Salesforce automatisch toe.
 
-> **Als de velden al bestaan**, sla deze stap dan over.
+> **Als de velden al bestaan**, sla deze stap over.
+
+#### A2 — Apex Classes aanmaken
+
+Ga in de **sandbox** naar **Setup → Apex Classes → New** en maak de volgende vier classes aan. Kopieer de volledige code van elk bestand uit GitHub en plak deze in het editor-venster. Klik daarna op **Save**.
+
+| Class | Bestand in GitHub |
+|---|---|
+| `DocusignEnvelopeService` | `DocusignEnvelopeService.cls` |
+| `DocusignEnvelopeServiceTest` | `DocusignEnvelopeServiceTest.cls` |
+| `DocusignCaseConfirmController` | `DocusignCaseConfirmController.cls` |
+| `DocusignCaseQuickActionController` | `DocusignCaseQuickActionController.cls` |
+
+> **Als de sandbox al classes heeft van de Sales Nieuw implementatie:** open de bestaande class via Setup → Apex Classes → klik op de naam → **Edit** → vervang de volledige inhoud door de nieuwe code. Sla op.
+>
+> **Speciale situatie — `DocusignCaseQuickActionControllerTest` naamconflict:** als de sandbox een class `DocusignCaseQuickActionControllerTest` heeft die de naam `DocusignCaseConfirmController` bezet, open dan die class via Edit en vervang de volledige inhoud door de inhoud van `DocusignEnvelopeServiceTest.cls` uit GitHub. Sla op als `DocusignEnvelopeServiceTest`. De oude test is dan vervangen door de nieuwe uitgebreide testklasse die alles dekt. Verwijder daarna de lege `DocusignCaseQuickActionControllerTest` als die nog los bestaat.
+
+#### A3 — Visualforce Page aanmaken
+
+Ga naar **Setup → Visualforce Pages → New**.
+
+- **Label:** `Docusign Case Confirm`
+- **Name:** `DocusignCaseConfirm` (wordt automatisch ingevuld)
+
+Verwijder de standaardtekst in het editor-venster en plak de volledige inhoud van `DocusignCaseConfirm.page` uit GitHub. Klik op **Save**.
+
+> Als de pagina al bestaat: klik op de naam → **Edit** → vervang de volledige inhoud.
 
 #### A4 — Metadata-records aanmaken
 
@@ -408,6 +412,24 @@ Doorloop deze checklist nadat de Change Set is gedeployed:
 ---
 
 ## Troubleshooting
+
+### Class opslaan mislukt met "Invalid type: DocusignEmailTemplate__mdt"
+
+De Apex-class `DocusignEnvelopeService` verwijst naar het Custom Metadata Type `DocusignEmailTemplate__mdt`, maar dat type bestaat nog niet in de sandbox.
+
+**Oplossing:** voer eerst stap A1 en A1b uit (Custom Metadata Type + velden aanmaken). Sla daarna de class opnieuw op — Salesforce hercompileert automatisch zodra het type bestaat.
+
+### Class opslaan mislukt met "Type name already in use: DocusignCaseConfirmController"
+
+De sandbox heeft een bestaande class `DocusignCaseQuickActionControllerTest` (van de Sales Nieuw implementatie) die de naam `DocusignCaseConfirmController` al bezet als inner of outer class. Dit conflicteert met onze nieuwe `DocusignCaseConfirmController.cls`.
+
+**Oplossing:**
+1. Ga naar **Setup → Apex Classes** en open `DocusignCaseQuickActionControllerTest`
+2. Klik op **Edit**
+3. Vervang de volledige inhoud door de inhoud van `DocusignEnvelopeServiceTest.cls` uit GitHub
+4. Verander de class-naam bovenaan van `DocusignCaseQuickActionControllerTest` naar `DocusignEnvelopeServiceTest`
+5. Klik op **Save**
+6. Sla daarna `DocusignCaseConfirmController.cls` opnieuw op — het naamconflict is opgelost
 
 ### Validatie/tests falen met "List has no rows for assignment to SObject" of profielnaam-fout
 
