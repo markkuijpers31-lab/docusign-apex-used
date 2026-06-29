@@ -139,7 +139,14 @@ Klik op **Save**.
 
 #### A1b — Velden aanmaken op het Custom Metadata Type
 
-Ga naar **Setup → Custom Metadata Types → Docusign Email Template → Fields → New** en maak de volgende vijf velden aan:
+> ⚠️ **Velden ≠ records.** Dit is de meest gemaakte fout. Een **veld** is een kolom (bijv. `ControleurSubject__c`); een **record** is een rij data (bijv. het `Used`-record). Je maakt hier eerst de **velden** aan. De records komen pas in stap A4. Maak je per ongeluk records aan met de veldnamen, dan blijft het New-record-formulier leeg (alleen Label en Name) — verwijder die foutieve records en maak alsnog de velden aan.
+
+Navigeer naar de **type-definitiepagina** (niet Manage Records):
+
+1. **Setup → Custom Metadata Types**
+2. Klik op de **naam/label** `Docusign Email Template` in de lijst — hiermee open je de type-definitiepagina
+3. Scroll naar de related list **Custom Fields** (niet de "Manage Records"-knop bovenaan)
+4. Klik in die related list op **New** en maak elk van de volgende vijf velden aan:
 
 | Veldnaam (Field Name) | Type | Lengte |
 |---|---|---|
@@ -148,6 +155,8 @@ Ga naar **Setup → Custom Metadata Types → Docusign Email Template → Fields
 | `ControleurBody__c` | Long Text Area | 32768 |
 | `ContactSubject__c` | Text | 255 |
 | `ContactBody__c` | Long Text Area | 32768 |
+
+Na het aanmaken zie je deze vijf velden terug in de **Custom Fields** related list. Pas als ze hier staan, verschijnen ze op het record-formulier in stap A4.
 
 Maak elk veld afzonderlijk aan via **New Field**. De `__c`-suffix voegt Salesforce automatisch toe.
 
@@ -414,6 +423,17 @@ Doorloop deze checklist nadat de Change Set is gedeployed:
 ---
 
 ## Troubleshooting
+
+### Het "New record"-formulier toont alleen Label en Name, geen inhoudsvelden
+
+De custom velden zijn nog niet aangemaakt op het Custom Metadata Type — vermoedelijk zijn ze per ongeluk als *records* aangemaakt in plaats van als *velden*.
+
+**Oplossing:**
+1. Klik op **Cancel** op het lege record-formulier
+2. Open **Manage Records** en verwijder eventuele records met namen als `ControleurSubject__c`, `ContactBody__c`, etc. (via **Del**)
+3. Ga naar de type-definitiepagina: **Setup → Custom Metadata Types → klik op `Docusign Email Template`**
+4. Maak in de related list **Custom Fields** de vijf velden aan (zie stap A1b)
+5. Ga terug naar **Manage Records → New** — de velden verschijnen nu op het formulier
 
 ### Class opslaan mislukt met "Invalid type: DocusignEmailTemplate__mdt"
 
