@@ -1,5 +1,35 @@
+/**
+ * DocusignEnvelopeService
+ * ------------------------------------------------------------------
+ * Bouwt en verstuurt een DocuSign-envelope vanaf een Case, met twee
+ * ondertekenaars in vaste volgorde:
+ *
+ *   1. De controleur (interne medewerker uit Case.Ter_controle_van__c) —
+ *      parafeert eerst via de anchor \i1\.
+ *   2. Het klantcontact (Contact op de Case) — tekent daarna via de
+ *      anchors \s2\ (handtekening) en \n2\ (naam), plus optioneel \ref2\
+ *      (referentie) en genummerde checkbox-anchors \cb_001\ ... \cb_200\.
+ *
+ * Kernbegrip "anchor": DocuSign zoekt vaste tekstmarkeringen (bv. \s2\) in
+ * de meegestuurde documenten en plaatst het bijbehorende veld daar. De
+ * markeringen staan in de Motrac-PDF-template; daarom is minimaal één PDF
+ * in de selectie verplicht (zie de PDF-check in buildEnvelope).
+ *
+ * De klasse zoekt NIET zelf bestanden bij elkaar: de aanroeper (de
+ * confirm-controller) levert exact de ContentVersion-Ids die de gebruiker
+ * heeft bevestigd. Alle SOQL draait WITH USER_MODE zodat FLS en sharing
+ * van de aanroepende gebruiker worden afgedwongen.
+ *
+ * Testbaarheid: buildEnvelope() bevat alle bouwlogica zonder callout; de
+ * daadwerkelijke callout (sendEnvelope / getDocuments) wordt overgeslagen
+ * via Test.isRunningTest(), zodat unit tests de bouwlogica dekken zonder
+ * DocuSign of het dfsle-package aan te roepen.
+ */
 public with sharing class DocusignEnvelopeService {
 
+    // Bovengrens voor het aantal checkbox-anchors (\cb_001\ ... \cb_200\)
+    // dat we op voorhand op de envelope zetten. Ruim genoeg voor elke
+    // template; niet-aanwezige anchors worden door DocuSign genegeerd.
     private static final Integer MAX_CHECKBOX_ANCHORS = 200;
 
     // Quote__c is een optioneel lookup-veld op Case dat niet in elke org of sandbox
@@ -190,9 +220,15 @@ public with sharing class DocusignEnvelopeService {
             new dfsle.Entity(caseRecord.Id)
         );
 
-        // RECIPIENT 1: Controleur (tekent eerst, krijgt \i1\)
-        // ignoreIfNotPresent = false -> faalt luid als de anchor ontbreekt
-        // i.p.v. de verplichte handtekening stil te droppen.
+        // De dfsle.Tab.Anchor-constructor gebruikt positionele parameters:
+        //   (anchorText, matchWholeWord, caseSensitive, horizontalAlignment,
+        //    ignoreIfNotPresent, allowWhiteSpaceInText, unit, xOffset, yOffset)
+        // ignoreIfNotPresent = false -> DocuSign faalt luid als de anchor niet
+        // in een document voorkomt, i.p.v. het (verplichte) veld stil te laten
+        // vallen. De x/y-offsets in pixels finetunen de plaatsing t.o.v. de
+        // anchor-tekst.
+
+        // RECIPIENT 1: Controleur (tekent eerst, parafeert via anchor \i1\).
         dfsle.Tab controleurInitialTab = new dfsle.InitialHereTab()
             .withScale(1.0)
             .withRequired(true)
@@ -259,16 +295,27 @@ public with sharing class DocusignEnvelopeService {
         // matchen op dfsle.Document.sourceId, die in test-context null
         // is en NPE veroorzaakte. Geen callout; binnen Apex-governors voor
         // typische selectiegroottes (N < 10).
+        // orderedDocs krijgt precies één dfsle.Document per Id, in de
+        // input-volgorde. In testcontext wordt dit blok overgeslagen omdat
+        // getDocuments het dfsle-package aanroept (dat in een lege testorg
+        // geen documenten kan materialiseren); zie klasse-header.
         List<dfsle.Document> orderedDocs = new List<dfsle.Document>();
         if (!Test.isRunningTest()) {
             for (Id cvId : uniqueContentVersionIds) {
+                // Eén Id per aanroep: dfsle geeft dan gegarandeerd de juiste
+                // volgorde terug (matchen op sourceId is niet nodig én faalt
+                // in tests met een NPE omdat sourceId daar null is).
                 List<dfsle.Document> oneDoc = dfsle.DocumentService.getDocuments(
                     ContentVersion.getSObjectType(),
                     new Set<Id>{ cvId }
                 );
                 if (oneDoc.isEmpty()) {
+                    // Meld hoeveel er wél laadden en welk bestand faalde, zodat
+                    // support gericht kan zoeken i.p.v. een generieke melding.
                     throw new DocusignSendException(
-                        'DocuSign kon één van de geselecteerde bestanden niet laden. Open het scherm opnieuw en probeer nogmaals.'
+                        'DocuSign kon bestand met Id ' + cvId + ' niet laden (' +
+                        orderedDocs.size() + ' van ' + uniqueContentVersionIds.size() +
+                        ' geladen). Open het scherm opnieuw en probeer nogmaals.'
                     );
                 }
                 orderedDocs.add(oneDoc[0]);
@@ -289,6 +336,12 @@ public with sharing class DocusignEnvelopeService {
     // SOQL helpers (allemaal WITH USER_MODE voor FLS/sharing-enforcement)
     // ------------------------------------------------------------------
 
+    /**
+     * Laadt de Case met alle velden die de envelope nodig heeft. De query
+     * wordt dynamisch opgebouwd zodat het optionele Quote__c-veld alleen
+     * wordt opgevraagd als het in deze org bestaat (zie HAS_QUOTE_FIELD);
+     * anders zou de SOQL niet compileren/uitvoeren in orgs zonder dat veld.
+     */
     private static Case loadCase(Id caseId) {
         String optionalQuoteFields = HAS_QUOTE_FIELD ? ', Quote__c, Quote__r.Name' : '';
         String soql =
@@ -302,6 +355,11 @@ public with sharing class DocusignEnvelopeService {
         return cases[0];
     }
 
+    /**
+     * Laadt de controleur (interne ondertekenaar). Naam en e-mail zijn nodig
+     * voor de DocuSign-recipient; IsActive wordt door de aanroeper gebruikt
+     * om te weigeren dat een inactieve gebruiker als ondertekenaar dient.
+     */
     private static User loadControleur(Id controleurId) {
         List<User> users = [
             SELECT Id, Name, Email, IsActive
@@ -316,6 +374,11 @@ public with sharing class DocusignEnvelopeService {
         return users[0];
     }
 
+    /**
+     * Laadt het klantcontact (externe ondertekenaar). Naam en e-mail zijn
+     * nodig voor de DocuSign-recipient; de aanroeper weigert een contact
+     * zonder e-mailadres.
+     */
     private static Contact loadContact(Id contactId) {
         List<Contact> contacts = [
             SELECT Id, Name, FirstName, LastName, Email
