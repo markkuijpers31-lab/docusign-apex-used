@@ -10,6 +10,10 @@
  *      anchors \s2\ (handtekening) en \n2\ (naam), plus optioneel \ref2\
  *      (referentie) en genummerde checkbox-anchors \cb_001\ ... \cb_200\.
  *
+ * Daarnaast wordt de controleur als Carbon Copy (CC) op routing-order 2
+ * toegevoegd, zodat hij een informatieve e-mail krijgt zodra de envelope
+ * bij de klant ter ondertekening ligt. Een CC tekent niet.
+ *
  * Kernbegrip "anchor": DocuSign zoekt vaste tekstmarkeringen (bv. \s2\) in
  * de meegestuurde documenten en plaatst het bijbehorende veld daar. De
  * markeringen staan in de Motrac-PDF-template; daarom is minimaal één PDF
@@ -285,8 +289,34 @@ public with sharing class DocusignEnvelopeService {
             .withEmailSettings(contactEmailSettings)
             .withTabs(contactTabs);
 
+        // RECIPIENT 3: Controleur als CC (Carbon Copy).
+        // Doel: de controleur weet dat de envelope na zijn eigen aftekening bij
+        // de klant ligt. Door de CC op routing-order 2 te zetten — dezelfde
+        // order als de klant — verstuurt DocuSign deze CC-mail op het moment dat
+        // de envelope naar de klant gaat. Een CC tekent niet, dus krijgt geen tabs.
+        // Dezelfde persoon mag zowel signer (order 1) als CC (order 2) zijn.
+        // NB: e-mailtekst hier inline gehouden; kan later naar de Custom
+        // Metadata-template verhuizen als CC-teksten per afdeling nodig zijn.
+        String controleurCcSubject =
+            'Ter info: het voorstel ligt nu ter ondertekening bij de klant - ' + caseLabel;
+        String controleurCcMessage =
+            'Beste ' + controleur.Name + ',\n\n' +
+            'Je hebt zojuist afgetekend. Het voorstel is nu ter ondertekening naar ' +
+            signerContact.Name + ' (de klant) verstuurd.\n\n' +
+            'Zodra de klant heeft getekend, ontvang je automatisch de volledig ondertekende versie.\n\n' +
+            'Deze e-mail is alleen ter informatie; je hoeft nu zelf niets te doen.';
+
+        dfsle.Recipient.EmailSettings controleurCcEmailSettings =
+            new dfsle.Recipient.EmailSettings(null, null, controleurCcSubject, controleurCcMessage);
+
+        dfsle.Recipient controleurCcRecipient = dfsle.Recipient.fromSource(
+                controleur.Name, controleur.Email, null, 'ControleurCC', new dfsle.Entity(controleur.Id))
+            .withType(dfsle.Recipient.TYPE_CARBON_COPY)
+            .withRoutingOrder(2)
+            .withEmailSettings(controleurCcEmailSettings);
+
         envelope = envelope.withRecipients(new List<dfsle.Recipient>{
-            controleurRecipient, contactRecipient
+            controleurRecipient, contactRecipient, controleurCcRecipient
         });
 
         // Documenten: GEEN AcroForm-transformatie. Checkboxen via expliciete anchors.
