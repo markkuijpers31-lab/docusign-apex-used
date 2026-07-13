@@ -36,12 +36,44 @@ public with sharing class DocusignEnvelopeService {
     // template; niet-aanwezige anchors worden door DocuSign genegeerd.
     private static final Integer MAX_CHECKBOX_ANCHORS = 200;
 
-    // Quote__c is een optioneel lookup-veld op Case dat niet in elke org of sandbox
-    // aanwezig is. De check via Schema voorkomt compile- en runtime-fouten in omgevingen
-    // zonder dit veld; het Q-nummer valt dan automatisch terug op CaseNumber.
+    // Mogelijke API-namen van het lookup-veld op Case dat naar de offerte
+    // (Quote) wijst, in volgorde van voorkeur. Verschillende orgs gebruiken
+    // een andere veldnaam; QOffertenummer__c is de Motrac-productienaam,
+    // Quote__c blijft als fallback voor andere omgevingen. De Name van het
+    // gekoppelde record levert het offertenummer voor {quoteNumber}.
+    private static final List<String> QUOTE_LOOKUP_CANDIDATES = new List<String>{
+        'QOffertenummer__c', 'Quote__c'
+    };
+
+    // De daadwerkelijk in deze org aanwezige lookup-veldnaam (of null als geen
+    // van de kandidaten bestaat). Dynamisch bepaald zodat de code compileert en
+    // draait ongeacht welk veld de org heeft; ontbreekt het veld, dan valt het
+    // Q-nummer terug op CaseNumber.
     @TestVisible
-    private static final Boolean HAS_QUOTE_FIELD =
-        Schema.SObjectType.Case.fields.getMap().containsKey('quote__c');
+    private static final String QUOTE_LOOKUP_FIELD = resolveQuoteLookupField();
+
+    private static String resolveQuoteLookupField() {
+        Map<String, Schema.SObjectField> caseFields = Schema.SObjectType.Case.fields.getMap();
+        for (String candidate : QUOTE_LOOKUP_CANDIDATES) {
+            Schema.SObjectField field = caseFields.get(candidate.toLowerCase());
+            // Alleen gebruiken als het een echt lookup/relatie-veld is. Zo niet
+            // (bv. een tekstveld dat toevallig de Id bevat), dan zou de SOQL
+            // met __r.Name crashen; we vallen dan veilig terug op CaseNumber.
+            if (field != null &&
+                field.getDescribe().getType() == Schema.DisplayType.REFERENCE) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    // Relatienaam voor het opvragen van de parent (bv. QOffertenummer__r) —
+    // een custom lookup-veld __c heeft relatienaam __r.
+    private static String quoteRelationshipName() {
+        return (QUOTE_LOOKUP_FIELD == null)
+            ? null
+            : QUOTE_LOOKUP_FIELD.removeEnd('__c') + '__r';
+    }
 
     /**
      * Toegestane bestandstypen voor verzending via DocuSign. Centrale bron van
@@ -188,9 +220,13 @@ public with sharing class DocusignEnvelopeService {
 
         // ----- E-mail teksten -----
         String caseLabel = 'Case ' + caseRecord.CaseNumber;
+        // {quoteNumber} = de Name van de gekoppelde offerte (bv. Q-00297162).
+        // Valt terug op CaseNumber als er geen offerte-lookup(veld) of geen
+        // gekoppeld record is.
         String quoteNumber = caseRecord.CaseNumber;
-        if (HAS_QUOTE_FIELD) {
-            SObject quoteRef = caseRecord.getSObject('Quote__r');
+        String relationshipName = quoteRelationshipName();
+        if (relationshipName != null) {
+            SObject quoteRef = caseRecord.getSObject(relationshipName);
             if (quoteRef != null) {
                 String qName = (String) quoteRef.get('Name');
                 if (String.isNotBlank(qName)) {
@@ -368,12 +404,15 @@ public with sharing class DocusignEnvelopeService {
 
     /**
      * Laadt de Case met alle velden die de envelope nodig heeft. De query
-     * wordt dynamisch opgebouwd zodat het optionele Quote__c-veld alleen
-     * wordt opgevraagd als het in deze org bestaat (zie HAS_QUOTE_FIELD);
-     * anders zou de SOQL niet compileren/uitvoeren in orgs zonder dat veld.
+     * wordt dynamisch opgebouwd zodat het offerte-lookupveld (bv.
+     * QOffertenummer__c) en de bijbehorende Name alleen worden opgevraagd als
+     * dat veld in deze org bestaat (zie QUOTE_LOOKUP_FIELD); anders zou de SOQL
+     * niet compileren/uitvoeren in orgs zonder dat veld.
      */
     private static Case loadCase(Id caseId) {
-        String optionalQuoteFields = HAS_QUOTE_FIELD ? ', Quote__c, Quote__r.Name' : '';
+        String optionalQuoteFields = (QUOTE_LOOKUP_FIELD != null)
+            ? ', ' + QUOTE_LOOKUP_FIELD + ', ' + quoteRelationshipName() + '.Name'
+            : '';
         String soql =
             'SELECT Id, CaseNumber, Subject, ContactId, Ter_controle_van__c, RecordType.DeveloperName' +
             optionalQuoteFields +

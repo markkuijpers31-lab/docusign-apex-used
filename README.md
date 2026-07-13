@@ -79,7 +79,7 @@ Controleer vóór je begint:
 - [ ] Er is een **Deployment Connection** van de sandbox naar productie: in productie via **Setup → Deployment Settings → sandbox → Edit → "Allow Inbound Changes" aanvinken**
 - [ ] Custom veld `Ter_controle_van__c` (User-lookup) bestaat op het Case-object in productie
 - [ ] Case RecordType `Used` bestaat in productie (DeveloperName: `Used`)
-- [ ] *(Optioneel)* Custom lookup-veld `Quote__c` op Case — indien aanwezig gebruikt de service het Q-nummer als referentie in e-mails; anders valt het terug op het CaseNumber
+- [ ] *(Optioneel)* Offerte-lookupveld op Case (`QOffertenummer__c`, of `Quote__c` in andere orgs) — indien aanwezig gebruikt de service de `Name` van de gekoppelde offerte (bv. `Q-00297162`) als `{quoteNumber}` in e-mails; anders valt het terug op het CaseNumber
 - [ ] Je weet welke andere Case-recordtypes de bestaande classes nu gebruiken (zie de [waarschuwing](#waarschuwing-vóór-het-overschrijven))
 
 ---
@@ -282,7 +282,7 @@ De service vervangt deze plaatshouders automatisch bij elke verzending:
 
 | Plaatshouder | Wordt vervangen door |
 |---|---|
-| `{quoteNumber}` | De `Name` van de gekoppelde `Quote__c` (Q-nummer); valt terug op het CaseNumber als er geen Quote is |
+| `{quoteNumber}` | De `Name` van de gekoppelde offerte via het lookupveld `QOffertenummer__c` (of `Quote__c`), bv. `Q-00297162`; valt terug op het CaseNumber als er geen offerte gekoppeld is |
 | `{controleurName}` | Volledige naam van de gebruiker in `Ter_controle_van__c` (controleur, signer 1) |
 | `{contactName}` | Volledige naam van het Case-contact (klant, signer 2) |
 | `{documentWord}` | `"het document"` bij één bestand, `"de documenten"` bij meerdere |
