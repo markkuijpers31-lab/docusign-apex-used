@@ -1,129 +1,116 @@
-# DocuSign Envelope Service — Motrac Used Afdeling
+# DocuSign Envelope Service — Installatie in productie (overschrijven bestaande componenten)
 
-Apex-integratie waarmee een Salesforce-gebruiker vanuit een Case via een Quick Action bestanden selecteert en als DocuSign-envelope verstuurt naar een controleur (signer 1) en een klantcontact (signer 2). E-mailteksten per afdeling worden beheerd via Custom Metadata — na de eenmalige deploy is er geen Apex-aanpassing of herdeployment nodig om een nieuwe afdeling te configureren.
+Deze README beschrijft hoe je de **nieuwe, metadata-gedreven versie** van de DocuSign-integratie in **productie** installeert. De Apex-classes en de Visualforce-pagina bestaan al op de productieomgeving (van een eerdere implementatie); deze installatie **overschrijft** ze en voegt de **nieuwe Custom Metadata** toe waarmee de e-mailteksten per afdeling worden beheerd.
+
+Na deze eenmalige installatie kan een admin een nieuwe afdeling toevoegen door alleen een metadata-record aan te maken — geen code, geen nieuwe deploy.
 
 ---
 
 ## Inhoudsopgave
 
-1. [Hoe het werkt](#hoe-het-werkt)
-2. [Projectbestanden](#projectbestanden)
+1. [Wat wordt er geïnstalleerd](#wat-wordt-er-geïnstalleerd)
+2. [Belangrijk: waarom een Change Set (en geen directe edit in productie)](#belangrijk-waarom-een-change-set-en-geen-directe-edit-in-productie)
 3. [Vereisten](#vereisten)
-4. [Let op: bestaande classes op de omgeving](#let-op-bestaande-classes-op-de-omgeving)
-5. [Eenmalige deploy via Sandbox UI en Change Sets](#eenmalige-deploy-via-sandbox-ui-en-change-sets)
-   - [Fase A — Componenten aanmaken in de sandbox](#fase-a--componenten-aanmaken-in-de-sandbox)
-   - [Fase B — Outbound Change Set aanmaken](#fase-b--outbound-change-set-aanmaken)
-   - [Fase C — Change Set deployen naar productie](#fase-c--change-set-deployen-naar-productie)
-6. [Quick Action koppelen aan Page Layout](#quick-action-koppelen-aan-page-layout)
-7. [Nieuwe afdeling toevoegen (geen deploy nodig)](#nieuwe-afdeling-toevoegen-geen-deploy-nodig)
+4. [Waarschuwing vóór het overschrijven](#waarschuwing-vóór-het-overschrijven)
+5. [Installatie via sandbox + Change Set](#installatie-via-sandbox--change-set)
+   - [Fase A — Componenten klaarzetten in de sandbox](#fase-a--componenten-klaarzetten-in-de-sandbox)
+   - [Fase B — Outbound Change Set uploaden](#fase-b--outbound-change-set-uploaden)
+   - [Fase C — Valideren en deployen naar productie](#fase-c--valideren-en-deployen-naar-productie)
+6. [Alternatief: Custom Metadata direct in productie aanmaken](#alternatief-custom-metadata-direct-in-productie-aanmaken)
+7. [Verificatie na installatie](#verificatie-na-installatie)
 8. [Plaatshouders in e-mailteksten](#plaatshouders-in-e-mailteksten)
-9. [Verificatie na deploy](#verificatie-na-deploy)
+9. [Nieuwe afdeling toevoegen (geen deploy nodig)](#nieuwe-afdeling-toevoegen-geen-deploy-nodig)
 10. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Hoe het werkt
+## Wat wordt er geïnstalleerd
 
-```
-Gebruiker klikt Quick Action
-        │
-        ▼
-Visualforce modal (DocusignCaseConfirm.page)
-        │  Bestandsselectie + drag-and-drop volgorde
-        ▼
-DocusignCaseConfirmController.cls
-        │  Valideert selectie, geeft volgorde door
-        ▼
-DocusignEnvelopeService.cls
-        │  Laadt Case + RecordType, zoekt metadata-record,
-        │  bouwt envelope met twee recipiënten
-        ▼
-dfsle (DocuSign for Salesforce managed package)
-        │
-        ▼
-DocuSign — sequentieel ondertekenen:
-  1. Controleur (signer 1) ontvangt e-mail → tekent af
-  2. Klantcontact (signer 2) ontvangt e-mail → ondertekent
-```
+| # | Component | Type | Actie in productie |
+|---|---|---|---|
+| 1 | `DocusignEnvelopeService` | Apex Class | **Overschrijven** |
+| 2 | `DocusignEnvelopeServiceTest` | Apex Class | **Overschrijven** |
+| 3 | `DocusignCaseConfirmController` | Apex Class | **Overschrijven** |
+| 4 | `DocusignCaseQuickActionController` | Apex Class | **Overschrijven** |
+| 5 | `DocusignCaseConfirm` | Visualforce Page | **Overschrijven** |
+| 6 | `DocusignEmailTemplate__mdt` (+ 5 velden) | Custom Metadata Type | **Nieuw** |
+| 7 | `DocusignEmailTemplate.Used` | Custom Metadata record | **Nieuw** |
 
-### E-mailteksten per afdeling
+> De classes en de pagina **overschrijven** de bestaande versies — dat is de bedoeling. De functionaliteit blijft gelijk; het verschil is dat de e-mailteksten niet meer hardcoded in de class staan maar uit `DocusignEmailTemplate__mdt` komen.
 
-Bij het verzenden zoekt de service een `DocusignEmailTemplate__mdt`-record op met `RecordTypeDeveloperName__c` gelijk aan de `DeveloperName` van het Case-recordtype. Is er geen record gevonden, dan wordt een ingebouwde generieke fallback gebruikt — de service werkt dus altijd, ook zonder geconfigureerd metadata-record.
+De broncode van alle bovenstaande componenten staat in deze repository:
+
+| Bestand in de repo | Component |
+|---|---|
+| `DocusignEnvelopeService.cls` | Apex Class — kernlogica (envelope bouwen + verzenden) |
+| `DocusignEnvelopeServiceTest.cls` | Apex Class — testklasse |
+| `DocusignCaseConfirmController.cls` | Apex Class — Visualforce-controller |
+| `DocusignCaseQuickActionController.cls` | Apex Class — Aura-alternatief (optioneel) |
+| `DocusignCaseConfirm.page` | Visualforce Page — de modal |
+| `objects/DocusignEmailTemplate__mdt.object-meta.xml` | Custom Metadata Type-definitie |
+| `objects/DocusignEmailTemplate__mdt/fields/*.field-meta.xml` | De 5 velddefinities |
+| `customMetadata/DocusignEmailTemplate.Used.md-meta.xml` | Het `Used`-metadata-record |
 
 ---
 
-## Projectbestanden
+## Belangrijk: waarom een Change Set (en geen directe edit in productie)
 
-| Bestand | Doel |
-|---|---|
-| `DocusignEnvelopeService.cls` | Kernlogica: envelope bouwen en verzenden |
-| `DocusignEnvelopeServiceTest.cls` | Apex-testklasse (negatieve paden + happy path) |
-| `DocusignCaseConfirmController.cls` | Visualforce-controller: bestandsselectie en drag-volgorde |
-| `DocusignCaseQuickActionController.cls` | Aura-alternatief (optioneel, standaard ongebruikt) |
-| `DocusignCaseConfirm.page` | Visualforce-pagina voor de modal |
-| `objects/DocusignEmailTemplate__mdt.object-meta.xml` | Custom Metadata Type definitie |
-| `objects/DocusignEmailTemplate__mdt/fields/` | Velddefinities (5 velden) |
-| `customMetadata/DocusignEmailTemplate.Used.md-meta.xml` | Metadata-record voor de Used afdeling |
+Salesforce staat **niet toe** dat je Apex-classes rechtstreeks in een productieorganisatie bewerkt via Setup → Apex Classes (de code-editor is daar read-only). Apex moet via een deployment binnenkomen. Daarom verloopt deze installatie via een **sandbox + Change Set**: je zet de code in een sandbox, en transporteert alles in één keer naar productie.
+
+Wat dit betekent per componenttype:
+
+| Component | Direct in productie te maken? | Route in deze README |
+|---|---|---|
+| Apex Classes | ❌ Nee | Change Set (verplicht) |
+| Visualforce Page | ✅ Ja, maar meegenomen voor één schone deploy | Change Set |
+| Custom Metadata Type + velden | ✅ Ja | Change Set of [direct in productie](#alternatief-custom-metadata-direct-in-productie-aanmaken) |
+| Custom Metadata records | ✅ Ja | Change Set of direct in productie |
+
+> **Geen Salesforce CLI nodig.** Alles verloopt via de Salesforce Setup-omgeving in de browser. (Wie liever de Metadata API/SFDX gebruikt kan de repo rechtstreeks naar productie deployen; dat valt buiten deze README.)
 
 ---
 
 ## Vereisten
 
-Controleer de volgende punten **vóór** je begint:
+Controleer vóór je begint:
 
-- [ ] DocuSign for Salesforce managed package (`dfsle`) is geïnstalleerd in de doelorg
-- [ ] Je hebt toegang tot een **sandbox** (voor het aanmaken van componenten en de Outbound Change Set)
-- [ ] Je hebt toegang tot de **productieomgeving** (voor het deployen van de Inbound Change Set)
-- [ ] Er is een **Deployment Connection** ingesteld van de sandbox naar productie
-      (Setup → Deployment Settings → klik op de sandbox → vink "Allow Inbound Changes" aan)
-- [ ] Custom veld `Ter_controle_van__c` (User lookup) bestaat op het Case-object
-- [ ] Case RecordType `Used` bestaat in de org (DeveloperName: `Used`)
-- [ ] *(Optioneel)* Custom lookup-veld `Quote__c` op Case gekoppeld aan `Quote__c`-object — als aanwezig, gebruikt de service het Q-nummer als referentie in e-mails; anders valt het terug op het CaseNumber
-- [ ] Je weet wat de exacte `DeveloperName` is van het Sales Nieuw RecordType
-      (Setup → Object Manager → Case → Record Types → klik op het recordtype → zie "Record Type Name")
-
-> **Geen Salesforce CLI of installatiesoftware nodig.** Alles verloopt via de Salesforce Setup-omgeving in de browser.
+- [ ] DocuSign for Salesforce managed package (`dfsle`) is geïnstalleerd in **zowel de sandbox als productie**
+- [ ] Je hebt toegang tot een **sandbox** en tot de **productieomgeving**
+- [ ] Er is een **Deployment Connection** van de sandbox naar productie: in productie via **Setup → Deployment Settings → sandbox → Edit → "Allow Inbound Changes" aanvinken**
+- [ ] Custom veld `Ter_controle_van__c` (User-lookup) bestaat op het Case-object in productie
+- [ ] Case RecordType `Used` bestaat in productie (DeveloperName: `Used`)
+- [ ] *(Optioneel)* Custom lookup-veld `Quote__c` op Case — indien aanwezig gebruikt de service het Q-nummer als referentie in e-mails; anders valt het terug op het CaseNumber
+- [ ] Je weet welke andere Case-recordtypes de bestaande classes nu gebruiken (zie de [waarschuwing](#waarschuwing-vóór-het-overschrijven))
 
 ---
 
-## Let op: bestaande classes op de omgeving
+## Waarschuwing vóór het overschrijven
 
-> **Belangrijk voor Motrac:** De Apex-classes (`DocusignEnvelopeService`, `DocusignCaseConfirmController`, etc.) staan al op de omgeving als onderdeel van de Sales Nieuw implementatie.
->
-> Dit pakket is de **gerefactorde, metadata-gedreven versie**. Deployen overschrijft de bestaande classes — dat is de bedoeling. Na de deploy werken Sales Nieuw én Used allebei via dezelfde classes, elk met hun eigen metadata-record voor e-mailteksten.
->
-> **Actie vereist vóór deploy:** maak eerst een `DocusignEmailTemplate__mdt`-record aan voor het Sales Nieuw recordtype (zie [Nieuwe afdeling toevoegen](#nieuwe-afdeling-toevoegen-geen-deploy-nodig)). Sla de huidige Sales Nieuw e-mailteksten op uit de bestaande `DocusignEnvelopeService.cls` op de sandbox. Na de deploy vallen die envelopes anders terug op generieke fallback-teksten.
->
-> **Aanbevolen volgorde:**
-> 1. Noteer de huidige e-mailteksten van Sales Nieuw (uit de bestaande class op de sandbox)
-> 2. Maak het `DocusignEmailTemplate__mdt`-record voor Sales Nieuw aan in de sandbox (Fase A, stap 4)
-> 3. Voer Fase A t/m C uit
-> 4. Verifieer beide afdelingen na de deploy
+⚠️ **De oude classes bevatten de e-mailteksten hardcoded. De nieuwe classes halen ze uit Custom Metadata.** Zodra je de classes overschrijft, zoekt de service voor elk Case-recordtype een `DocusignEmailTemplate__mdt`-record op. Is er géén record voor een recordtype, dan valt de e-mail terug op een **generieke fallback-tekst** die in de code staat.
+
+**Actie:** maak vóór (of tegelijk met) de deploy een metadata-record aan voor **elk recordtype dat deze integratie in productie gebruikt** — niet alleen `Used`. Gebruikt bijvoorbeeld ook een "Sales"-afdeling deze classes, noteer dan de huidige teksten uit de bestaande productie-class en zet ze in een eigen metadata-record (zie [Fase A, stap A4](#a4--metadata-records-aanmaken)). Anders krijgen die afdelingen na de deploy de generieke fallback-teksten.
 
 ---
 
-## Eenmalige deploy via Sandbox UI en Change Sets
+## Installatie via sandbox + Change Set
 
-De deploy bestaat uit drie fasen:
-- **Fase A** — componenten aanmaken in de sandbox (code kopiëren vanuit GitHub)
-- **Fase B** — Outbound Change Set aanmaken en uploaden vanuit de sandbox
-- **Fase C** — Change Set deployen naar productie
+De installatie kent drie fasen:
+
+- **Fase A** — componenten klaarzetten in de sandbox (code uit deze repo kopiëren)
+- **Fase B** — een Outbound Change Set aanmaken en uploaden naar productie
+- **Fase C** — de Change Set in productie valideren en deployen
+
+> Change Sets transporteren metadata van sandbox naar productie; ze kunnen geen code rechtstreeks uit GitHub importeren. Daarom zet je de componenten eerst in de sandbox.
+>
+> **Aanbevolen volgorde binnen Fase A:** eerst het **Custom Metadata Type (A1) + velden (A1b)**, daarna de **Apex-classes (A2)**. De code lost het type dynamisch op en compileert ook zonder, maar de feature werkt pas als type én record bestaan.
 
 ---
 
-### Fase A — Componenten aanmaken in de sandbox
-
-> Change Sets transporteren bestaande metadata van sandbox naar productie — ze kunnen geen code importeren vanuit GitHub. Daarom maak je eerst alle componenten aan in de sandbox, waarna je ze via een Change Set naar productie kunt sturen.
-
-> **Aanbevolen volgorde:** maak het **Custom Metadata Type (A1) vóór de Apex-classes (A2)** aan. De code lost het type dynamisch op en compileert ook zonder het type, maar de feature werkt pas als het type én een metadata-record bestaan.
-
-Alle code die je nodig hebt staat in deze GitHub-repository. Open de bestanden in GitHub en kopieer de volledige inhoud.
+### Fase A — Componenten klaarzetten in de sandbox
 
 #### A1 — Custom Metadata Type aanmaken
 
-Ga naar **Setup → Custom Metadata Types → New**.
-
-Vul in:
+**Setup → Custom Metadata Types → New.** Vul in:
 
 | Veld | Waarde |
 |---|---|
@@ -133,83 +120,71 @@ Vul in:
 | **Description** | `E-mailteksten per Case RecordType voor DocuSign-envelopes.` |
 | **Visibility** | Public |
 
-> **Let op de Object Name.** Salesforce vult dit veld automatisch op basis van het label en zet spaties om naar underscores → `Docusign_Email_Template`. **Verwijder de underscores handmatig** zodat er `DocusignEmailTemplate` staat (API-naam wordt dan `DocusignEmailTemplate__mdt`). De code accepteert ook de underscore-variant `Docusign_Email_Template__mdt`, maar de naam zonder underscores is aanbevolen voor consistentie met deze repo.
+> **Let op de Object Name.** Salesforce vult dit automatisch op basis van het label en zet spaties om naar underscores (`Docusign_Email_Template`). **Verwijder de underscores handmatig** zodat er `DocusignEmailTemplate` staat (API-naam wordt dan `DocusignEmailTemplate__mdt`). De code accepteert ook `Docusign_Email_Template__mdt`, maar zonder underscores is aanbevolen. Klik op **Save**.
+>
+> Bestaat het type al? Sla deze stap over en controleer in A1b of alle velden aanwezig zijn.
 
-Klik op **Save**.
+#### A1b — De vijf velden aanmaken
 
-> **Als het type al bestaat**, sla deze stap over en ga direct naar A1b om te controleren of de velden aanwezig zijn.
-
-#### A1b — Velden aanmaken op het Custom Metadata Type
-
-> ⚠️ **Velden ≠ records.** Dit is de meest gemaakte fout. Een **veld** is een kolom (bijv. `ControleurSubject__c`); een **record** is een rij data (bijv. het `Used`-record). Je maakt hier eerst de **velden** aan. De records komen pas in stap A4. Maak je per ongeluk records aan met de veldnamen, dan blijft het New-record-formulier leeg (alleen Label en Name) — verwijder die foutieve records en maak alsnog de velden aan.
-
-Navigeer naar de **type-definitiepagina** (niet Manage Records):
+> ⚠️ **Velden ≠ records.** Een **veld** is een kolom (bv. `ControleurSubject__c`); een **record** is een rij data (bv. `Used`). Je maakt hier eerst de **velden**. Records komen in A4.
 
 1. **Setup → Custom Metadata Types**
-2. Klik op de **naam/label** `Docusign Email Template` in de lijst — hiermee open je de type-definitiepagina
-3. Scroll naar de related list **Custom Fields** (niet de "Manage Records"-knop bovenaan)
-4. Klik in die related list op **New** en maak elk van de volgende vijf velden aan:
+2. Klik op de **naam/label** `Docusign Email Template` (opent de type-definitiepagina — niet "Manage Records")
+3. Scroll naar de related list **Custom Fields** en klik op **New**
+4. Maak elk van deze vijf velden aan:
 
-| Field Name (API-naam, exact) | Type | Lengte |
-|---|---|---|
-| `RecordTypeDeveloperName` | Text | 80 |
-| `ControleurSubject` | Text | 255 |
-| `ControleurBody` | Long Text Area | 32768 |
-| `ContactSubject` | Text | 255 |
-| `ContactBody` | Long Text Area | 32768 |
+| Field Name (API, exact) | Label | Type | Lengte |
+|---|---|---|---|
+| `RecordTypeDeveloperName` | Record Type Developer Name | Text | 80 |
+| `ControleurSubject` | Controleur Onderwerp | Text | 255 |
+| `ControleurBody` | Controleur Berichttekst | Long Text Area | 32768 |
+| `ContactSubject` | Contact Onderwerp | Text | 255 |
+| `ContactBody` | Contact Berichttekst | Long Text Area | 32768 |
 
-> **Tip — Field Label zonder spaties.** Salesforce zet spaties in het label om naar underscores in de API-naam. Een label "Controleur Subject" levert API-naam `Controleur_Subject__c` op. Typ het **Field Label** zónder spaties (bijv. `ControleurSubject`) om de voorkeursnaam `ControleurSubject__c` te krijgen.
+> **Belangrijk — de API-naam (Field Name), niet het label, moet exact kloppen.** In het veldformulier vul je "Field Label" en "Field Name" apart in. Zet **Field Name** op precies `ControleurSubject`, `ControleurBody`, enzovoort (Salesforce voegt `__c` toe). Het label mag spaties bevatten; de API-naam mag dat niet.
 >
-> **De code is tolerant:** `DocusignEnvelopeService` leest de velden dynamisch en accepteert zowel de voorkeursnaam (`ControleurSubject__c`) als de underscore-variant (`Controleur_Subject__c`). Je hoeft bestaande velden met underscores dus niet per se te hernoemen. De voorkeursnamen zonder underscore blijven aanbevolen voor consistentie met de velddefinities in deze repo.
+> **De code is tolerant:** hij accepteert zowel de voorkeursnaam (`ControleurSubject__c`) als de underscore-variant (`Controleur_Subject__c`). Bestaande velden met underscores hoef je dus niet te hernoemen.
 
-Na het aanmaken zie je de vijf velden terug in de **Custom Fields** related list. Pas als ze hier staan, verschijnen ze op het record-formulier in stap A4.
+#### A2 — Apex Classes overschrijven/aanmaken
 
-#### A2 — Apex Classes aanmaken
+Ga in de **sandbox** naar **Setup → Apex Classes**. Voor elke class:
 
-Ga in de **sandbox** naar **Setup → Apex Classes → New** en maak de volgende vier classes aan. Kopieer de volledige code van elk bestand uit GitHub en plak deze in het editor-venster. Klik daarna op **Save**.
+- **Bestaat de class al** (van de vorige implementatie): open hem → **Edit** → vervang de **volledige** inhoud door de code uit de repo → **Save**.
+- **Bestaat de class nog niet:** **New** → plak de volledige code → **Save**.
 
-| Class | Bestand in GitHub |
+| Class | Bestand in de repo |
 |---|---|
 | `DocusignEnvelopeService` | `DocusignEnvelopeService.cls` |
 | `DocusignEnvelopeServiceTest` | `DocusignEnvelopeServiceTest.cls` |
 | `DocusignCaseConfirmController` | `DocusignCaseConfirmController.cls` |
 | `DocusignCaseQuickActionController` | `DocusignCaseQuickActionController.cls` |
 
-> **Als de sandbox al classes heeft van de Sales Nieuw implementatie:** open de bestaande class via Setup → Apex Classes → klik op de naam → **Edit** → vervang de volledige inhoud door de nieuwe code. Sla op.
->
-> **Speciale situatie — `DocusignCaseQuickActionControllerTest` naamconflict:** als de sandbox een class `DocusignCaseQuickActionControllerTest` heeft die de naam `DocusignCaseConfirmController` bezet, open dan die class via Edit en vervang de volledige inhoud door de inhoud van `DocusignEnvelopeServiceTest.cls` uit GitHub. Sla op als `DocusignEnvelopeServiceTest`. De oude test is dan vervangen door de nieuwe uitgebreide testklasse die alles dekt. Verwijder daarna de lege `DocusignCaseQuickActionControllerTest` als die nog los bestaat.
+> **Naamconflict `DocusignCaseConfirmController` bij opslaan?** Zie [Troubleshooting](#class-opslaan-mislukt-met-type-name-already-in-use).
 
-#### A3 — Visualforce Page aanmaken
+#### A3 — Visualforce Page overschrijven/aanmaken
 
-Ga naar **Setup → Visualforce Pages → New**.
+**Setup → Visualforce Pages.**
 
-- **Label:** `Docusign Case Confirm`
-- **Name:** `DocusignCaseConfirm` (wordt automatisch ingevuld)
-
-Verwijder de standaardtekst in het editor-venster en plak de volledige inhoud van `DocusignCaseConfirm.page` uit GitHub. Klik op **Save**.
-
-> Als de pagina al bestaat: klik op de naam → **Edit** → vervang de volledige inhoud.
+- Bestaat `DocusignCaseConfirm` al: klik op de naam → **Edit** → vervang de volledige inhoud door `DocusignCaseConfirm.page` uit de repo → **Save**.
+- Bestaat hij nog niet: **New** → Label `Docusign Case Confirm`, Name `DocusignCaseConfirm` → plak de inhoud → **Save**.
 
 #### A4 — Metadata-records aanmaken
 
-> **Lightning-navigatie:** "Manage Records" staat niet in de lijst van Custom Metadata Types, maar op de detailpagina. Ga naar **Setup → Custom Metadata Types**, zoek in de lijst naar *Docusign Email Template* en **klik op de naam/label**. Op de detailpagina die dan opent staat de knop **Manage Records** rechtsbovenaan of als link onder de veldentabel.
+> **Navigatie:** **Setup → Custom Metadata Types**, klik op de naam **Docusign Email Template**, en klik op de detailpagina op **Manage Records**.
 
-Ga via bovenstaande stap naar de Manage Records pagina van *Docusign Email Template*.
-
-**Record voor Used afdeling (nieuw):**
-
-Klik op **New** en vul in:
+**Record voor de Used-afdeling** — klik op **New** en vul in:
 
 | Veld | Waarde |
 |---|---|
 | **Label** | `Used` |
-| **RecordTypeDeveloperName__c** | `Used` |
-| **ControleurSubject__c** | `Document(en) ter controle - {quoteNumber}` |
-| **ControleurBody__c** | zie hieronder |
-| **ContactSubject__c** | `Officieel voorstel van Motrac - {quoteNumber}` |
-| **ContactBody__c** | zie hieronder |
+| **Record Type Developer Name** (`RecordTypeDeveloperName__c`) | `Used` |
+| **Controleur Onderwerp** (`ControleurSubject__c`) | `Document(en) ter controle - {quoteNumber}` |
+| **Contact Onderwerp** (`ContactSubject__c`) | `Officieel voorstel van Motrac - {quoteNumber}` |
+| **Controleur Berichttekst** (`ControleurBody__c`) | zie hieronder |
+| **Contact Berichttekst** (`ContactBody__c`) | zie hieronder |
 
-Bodytekst controleur (`ControleurBody__c`):
+**Controleur Berichttekst** (`ControleurBody__c`):
+
 ```
 Beste {controleurName},
 
@@ -223,7 +198,8 @@ Met vriendelijke groet,
 Motrac Used
 ```
 
-Bodytekst klantcontact (`ContactBody__c`):
+**Contact Berichttekst** (`ContactBody__c`):
+
 ```
 Beste {contactName},
 
@@ -239,37 +215,18 @@ Motrac
 
 Klik op **Save**.
 
----
-
-**Record voor Sales Nieuw (verplicht vóór deploy naar productie):**
-
-Klik opnieuw op **New** en vul in:
-
-| Veld | Waarde |
-|---|---|
-| **Label** | `Sales Nieuw` (of de naam van de afdeling) |
-| **RecordTypeDeveloperName__c** | De exacte DeveloperName van het Sales Nieuw RecordType (zie [Vereisten](#vereisten)) |
-| **ControleurSubject__c** | Het onderwerp dat Sales Nieuw nu gebruikt |
-| **ControleurBody__c** | De bodytekst die Sales Nieuw nu gebruikt |
-| **ContactSubject__c** | Het onderwerp dat Sales Nieuw nu gebruikt voor de klant |
-| **ContactBody__c** | De bodytekst die Sales Nieuw nu gebruikt voor de klant |
-
-Gebruik de plaatshouders `{quoteNumber}`, `{controleurName}`, `{contactName}`, `{documentWord}` en `{documentRef}` waar de huidige code dynamische waarden invult (zie [Plaatshouders](#plaatshouders-in-e-mailteksten)).
+> **Maak nu ook records aan voor alle andere recordtypes** die de integratie in productie gebruikt (zie de [waarschuwing](#waarschuwing-vóór-het-overschrijven)), elk met de teksten uit de huidige productie-class. Gebruik de [plaatshouders](#plaatshouders-in-e-mailteksten) waar de oude code dynamische waarden invulde.
 
 ---
 
-### Fase B — Outbound Change Set aanmaken
+### Fase B — Outbound Change Set uploaden
 
-Ga in de **sandbox** naar **Setup → Outbound Change Sets → New**.
+**Setup → Outbound Change Sets → New** (in de **sandbox**):
 
-- **Change Set Name:** `DocuSign Used Refactor`
-- **Description:** `Refactored DocuSign envelope service met Custom Metadata voor e-mailteksten per afdeling.`
+- **Change Set Name:** `DocuSign Metadata Refactor`
+- **Description:** `Overschrijft de DocuSign-classes + VF-pagina en voegt Custom Metadata voor e-mailteksten toe.`
 
-Klik op **Save**.
-
-#### Componenten toevoegen
-
-Klik op **Add** en voeg de volgende componenten toe. Zoek per type en naam:
+Klik op **Save**, daarna op **Add** en voeg toe:
 
 | Component Type | Component Name |
 |---|---|
@@ -280,157 +237,76 @@ Klik op **Add** en voeg de volgende componenten toe. Zoek per type en naam:
 | Visualforce Page | `DocusignCaseConfirm` |
 | Custom Metadata Type | `DocusignEmailTemplate__mdt` |
 | Custom Metadata | `DocusignEmailTemplate.Used` |
-| Custom Metadata | `DocusignEmailTemplate.Sales_Nieuw` *(of de naam van jouw Sales Nieuw record)* |
+| Custom Metadata | *(elk extra afdelingsrecord dat je in A4 maakte)* |
 
-> **Custom Metadata Type toevoegen:** bij het zoekscherm kies je **Type = Custom Metadata Type** en zoek je op `DocusignEmailTemplate`. Dit voegt automatisch ook de velden mee.
->
-> **Custom Metadata records toevoegen:** kies **Type = Custom Metadata** en zoek op `DocusignEmailTemplate`. Voeg elk record afzonderlijk toe.
+> **Custom Metadata Type toevoegen** (Type = *Custom Metadata Type*, zoek `DocusignEmailTemplate`) neemt automatisch de vijf velden mee. **Records** voeg je apart toe via Type = *Custom Metadata*.
 
-#### Uploaden naar productie
-
-Scroll naar beneden en klik op **Upload**. Kies in het dropdown-menu de **productieomgeving** als doelorganisatie. Klik op **Upload** ter bevestiging.
+Scroll naar **Upload**, kies de **productieomgeving** als doel en bevestig.
 
 ---
 
-### Fase C — Change Set deployen naar productie
+### Fase C — Valideren en deployen naar productie
 
-Ga in de **productieomgeving** naar **Setup → Inbound Change Sets**.
+**Setup → Inbound Change Sets** (in **productie**). De geüploade set `DocuSign Metadata Refactor` staat op status `Pending`.
 
-Je ziet de zojuist geüploade Change Set `DocuSign Used Refactor` staan met de status `Pending`.
-
-#### Valideren (aanbevolen)
-
-Klik op de naam van de Change Set en klik daarna op **Validate**. Salesforce voert de Apex-tests uit en controleert of de deploy zou slagen, zonder iets daadwerkelijk aan te passen. Wacht totdat de validatie gereed is en controleer de testresultaten.
-
-> Als de validatie mislukt op de profielnaam in de testklasse (`Standard User`), zie dan [Troubleshooting](#troubleshooting).
-
-#### Deployen
-
-Klik op **Deploy**. Bevestig de actie. De deploy duurt doorgaans enkele minuten. Na voltooiing zie je de status **Succeeded**.
-
-#### Deploy verifiëren
-
-- **Setup → Apex Classes** → zoek op `DocusignEnvelopeService` — de klasse is zichtbaar met een recente wijzigingsdatum
-- **Setup → Custom Metadata Types → klik op label *Docusign Email Template* → Manage Records** — beide records (`Used` en het Sales Nieuw record) zijn aanwezig
+1. **Valideren (aanbevolen):** klik op de set → **Validate**. Salesforce draait de Apex-tests en controleert of de deploy zou slagen, zonder iets te wijzigen. Wacht op het resultaat en controleer de tests.
+   - Faalt de validatie op de profielnaam in de testklasse? Zie [Troubleshooting](#validatietests-falen-op-de-profielnaam).
+2. **Deployen:** klik op **Deploy** en bevestig. Na enkele minuten staat de status op **Succeeded** en zijn de classes + pagina overschreven en de metadata toegevoegd.
 
 ---
 
-## Quick Action koppelen aan Page Layout
+## Alternatief: Custom Metadata direct in productie aanmaken
 
-Voer deze stappen uit **per afdeling** die de Quick Action moet kunnen gebruiken. Je hoeft dit maar één keer per Page Layout te doen.
+De Apex-classes móéten via de Change Set. Maar het **Custom Metadata Type, de velden en de records** kun je desgewenst **rechtstreeks in productie** aanmaken via Setup — exact volgens de stappen [A1](#a1--custom-metadata-type-aanmaken), [A1b](#a1b--de-vijf-velden-aanmaken) en [A4](#a4--metadata-records-aanmaken), maar dan in de productieorganisatie. Laat ze in dat geval weg uit de Change Set (Fase B) en neem alleen de classes + de Visualforce-pagina mee.
 
-### Stap 1 — Quick Action aanmaken
-
-1. **Setup → Object Manager → Case → Buttons, Links, and Actions → New Action**
-2. Vul in:
-   - **Action Type:** Visualforce Page
-   - **Visualforce Page:** `DocusignCaseConfirm`
-   - **Height:** `600` (pixels, aanbevolen)
-   - **Label:** `Verstuur via DocuSign`
-   - **Name:** wordt automatisch ingevuld als `Verstuur_via_DocuSign`
-3. Klik op **Save**
-
-> Als de Quick Action al bestaat (van de Sales Nieuw implementatie), controleer dan of de Visualforce Page nog steeds verwijst naar `DocusignCaseConfirm`. Zo ja, sla deze stap over.
-
-### Stap 2 — Quick Action toevoegen aan de Page Layout
-
-1. **Setup → Object Manager → Case → Page Layouts**
-2. Klik op de Page Layout van de afdeling waarvoor je de actie wilt tonen (bijv. `Used Case Layout`)
-3. Klik bovenaan op **Quick Actions** in de palette
-4. Sleep de actie `Verstuur via DocuSign` naar de **Salesforce Mobile and Lightning Experience Actions** sectie op de gewenste positie
-5. Klik op **Save**
-
-Herhaal stap 2 voor elke Page Layout (bijv. ook de Sales Nieuw layout, als die de actie nog niet heeft).
+> Dit kan handig zijn als je de teksten in productie wilt kunnen bijstellen zonder telkens een sandbox-record over te zetten. Records zijn direct actief; geen deploy nodig.
 
 ---
 
-## Nieuwe afdeling toevoegen (geen deploy nodig)
+## Verificatie na installatie
 
-Na de eenmalige deploy kan een admin zelfstandig een nieuwe afdeling configureren vanuit **Setup** in de productieomgeving. Geen code, geen Change Set.
-
-### Stap 1 — DeveloperName van het RecordType opzoeken
-
-1. **Setup → Object Manager → Case → Record Types**
-2. Klik op het recordtype van de nieuwe afdeling
-3. Noteer de waarde van **Record Type Name** (de `DeveloperName`)
-   - Voorbeeld: `Rental`, `Service`, `SalesGebruikt`
-   - Let op: hoofdlettergevoelig, geen spaties, underscores zijn toegestaan
-
-### Stap 2 — Metadata-record aanmaken
-
-1. **Setup → Custom Metadata Types** → klik op de naam **Docusign Email Template** in de lijst → klik op **Manage Records** → klik op **New**
-2. Vul in:
-
-| Veld | Waarde |
-|---|---|
-| **Label** | Naam van de afdeling (bijv. `Rental`) |
-| **Custom Metadata Type Record Name** | Wordt automatisch ingevuld |
-| **RecordTypeDeveloperName__c** | Exact de DeveloperName uit stap 1 |
-| **ControleurSubject__c** | Onderwerpregel voor de controleur |
-| **ControleurBody__c** | Bodytekst voor de controleur |
-| **ContactSubject__c** | Onderwerpregel voor het klantcontact |
-| **ContactBody__c** | Bodytekst voor het klantcontact |
-
-3. Gebruik plaatshouders in de tekstvelden (zie [Plaatshouders](#plaatshouders-in-e-mailteksten))
-4. Klik op **Save** — het record is direct actief, geen deploy nodig
-
-### Stap 3 — Quick Action koppelen
-
-Koppel de Quick Action aan de Page Layout van de nieuwe afdeling (zie [Quick Action koppelen](#quick-action-koppelen-aan-page-layout)).
+- [ ] **Apex-classes bijgewerkt** — Setup → Apex Classes → `DocusignEnvelopeService` toont een recente wijzigingsdatum
+- [ ] **Visualforce-pagina aanwezig** — Setup → Visualforce Pages → `DocusignCaseConfirm`
+- [ ] **Custom Metadata Type aanwezig** — Setup → Custom Metadata Types → `Docusign Email Template` met vijf velden in **Custom Fields**
+- [ ] **Metadata-records aanwezig** — Manage Records → minimaal het `Used`-record (plus eventuele extra afdelingen) met ingevulde tekstvelden
+- [ ] **Apex-tests groen** — Setup → Apex Test Execution → `DocusignEnvelopeServiceTest` → Run → tests slagen
+- [ ] **Quick Action werkt** — open een Case met RecordType `Used` → klik `Verstuur via DocuSign` → de modal opent met de bestandslijst
+- [ ] **Verzending werkt (Used)** — selecteer minimaal één **PDF** → verzenden → de controleur ontvangt de e-mail met het juiste onderwerp en het Q-nummer; na aftekenen ontvangt het klantcontact zijn e-mail
+- [ ] **Overige afdelingen ongewijzigd** — open een Case van een ander recordtype dat de integratie gebruikt → de teksten komen overeen met het bijbehorende metadata-record (niet de generieke fallback)
 
 ---
 
 ## Plaatshouders in e-mailteksten
 
-Gebruik deze plaatshouders in de bodyteksten en onderwerpregels. De service vervangt ze automatisch bij elke verzending.
+De service vervangt deze plaatshouders automatisch bij elke verzending:
 
 | Plaatshouder | Wordt vervangen door |
 |---|---|
-| `{quoteNumber}` | De `Name` van de gekoppelde `Quote__c` (het Q-nummer); valt terug op het CaseNumber als er geen Quote is |
-| `{controleurName}` | De volledige naam van de gebruiker in `Ter_controle_van__c` (de controleur, signer 1) |
-| `{contactName}` | De volledige naam van het Case-contact (de klant, signer 2) |
-| `{documentWord}` | `"het document"` bij één bestand, `"de documenten"` bij meerdere bestanden |
-| `{documentRef}` | `"dit document"` bij één bestand, `"deze documenten"` bij meerdere bestanden |
+| `{quoteNumber}` | De `Name` van de gekoppelde `Quote__c` (Q-nummer); valt terug op het CaseNumber als er geen Quote is |
+| `{controleurName}` | Volledige naam van de gebruiker in `Ter_controle_van__c` (controleur, signer 1) |
+| `{contactName}` | Volledige naam van het Case-contact (klant, signer 2) |
+| `{documentWord}` | `"het document"` bij één bestand, `"de documenten"` bij meerdere |
+| `{documentRef}` | `"dit document"` bij één bestand, `"deze documenten"` bij meerdere |
 
-**Voorbeeld bodytekst:**
-
-```
-Beste {controleurName},
-
-Bijgaand ontvang je ter controle het document met referentie {quoteNumber}.
-
-Bekijk het document zorgvuldig en teken af indien alles akkoord is.
-
-Met vriendelijke groet,
-Motrac
-```
+> `{documentWord}` en `{documentRef}` werken alleen in de **Contact**-teksten; de controleur-teksten ondersteunen `{quoteNumber}`, `{controleurName}` en `{contactName}`.
 
 ---
 
-## Verificatie na deploy
+## Nieuwe afdeling toevoegen (geen deploy nodig)
 
-Doorloop deze checklist nadat de Change Set is gedeployed:
+Na de installatie configureert een admin een nieuwe afdeling volledig vanuit **Setup** in productie — geen code, geen Change Set:
 
-- [ ] **Custom Metadata Type aanwezig** — Setup → Custom Metadata Types → `Docusign Email Template` is zichtbaar
-- [ ] **Metadata-records aanwezig** — Manage Records → records `Used` en het Sales Nieuw-record zijn aanwezig met ingevulde tekstvelden
-- [ ] **Apex-classes aanwezig** — Setup → Apex Classes → `DocusignEnvelopeService` en `DocusignCaseConfirmController` zichtbaar
-- [ ] **Apex-tests groen** — Setup → Apex Test Execution → Select Tests → kies `DocusignEnvelopeServiceTest` → Run → alle tests slagen
-- [ ] **Quick Action zichtbaar** — open een Case met RecordType `Used` → de actie `Verstuur via DocuSign` staat in de actiebalk
-- [ ] **Modal opent correct** — klik de actie → een modal verschijnt met de bestandslijst van de Case
-- [ ] **Verzending werkt (Used)** — selecteer minimaal één PDF en eventuele andere bestanden → Verzenden
-  - Controleur ontvangt e-mail met het correcte onderwerp en het Q-nummer in de body
-  - Na aftekening door de controleur ontvangt het klantcontact zijn e-mail
-- [ ] **Sales Nieuw nog werkend** — open een Case met het Sales Nieuw-recordtype → doorloop dezelfde flow → teksten komen overeen met het Sales Nieuw metadata-record
+1. **DeveloperName opzoeken:** Setup → Object Manager → Case → Record Types → klik het recordtype → noteer **Record Type Name** (hoofdlettergevoelig, geen spaties).
+2. **Metadata-record aanmaken:** Setup → Custom Metadata Types → `Docusign Email Template` → **Manage Records → New**. Vul `RecordTypeDeveloperName__c` met de DeveloperName uit stap 1 en de vier tekstvelden met [plaatshouders](#plaatshouders-in-e-mailteksten). **Save** — direct actief.
+3. **Quick Action koppelen:** voeg de Quick Action `Verstuur via DocuSign` toe aan de Page Layout van die afdeling (Setup → Object Manager → Case → Page Layouts).
 
 ---
 
 ## Troubleshooting
 
-### E-mails bevatten fallback-teksten terwijl het metadata-record wél bestaat
+### E-mails bevatten generieke/fallback-teksten terwijl er een record bestaat
 
-De code leest de templatevelden dynamisch en accepteert zowel de voorkeursnamen (`ControleurSubject__c`) als de underscore-variant (`Controleur_Subject__c`, en `Contac_Body__c` voor de bodyvelden). Krijg je tóch de generieke fallback-teksten terwijl er een record bestaat, dan heet een veld waarschijnlijk iets dat buiten deze varianten valt.
-
-**Controleer:** Setup → Custom Metadata Types → klik `Docusign Email Template` → related list **Custom Fields** → vergelijk de **API Name**-kolom met één van de geaccepteerde varianten:
+De code leest de velden dynamisch en accepteert zowel de voorkeursnamen als de underscore-varianten:
 
 | Logisch veld | Geaccepteerde API-namen |
 |---|---|
@@ -440,83 +316,48 @@ De code leest de templatevelden dynamisch en accepteert zowel de voorkeursnamen 
 | Onderwerp klant | `ContactSubject__c` of `Contact_Subject__c` |
 | Body klant | `ContactBody__c`, `Contact_Body__c` of `Contac_Body__c` |
 
-**Oplossing:** wijkt een veldnaam hiervan af, bewerk dan het veld via **Edit** en zet de **Field Name** naar één van de geaccepteerde namen, of verwijder en maak opnieuw aan.
+**Controleer** de **API Name**-kolom onder Custom Fields en de **Object Name** van het type (`DocusignEmailTemplate__mdt` of `Docusign_Email_Template__mdt`). Wijkt een naam af, hernoem het veld/type of maak het opnieuw aan.
 
-Controleer ook de **Object Name** van het type zelf: de code accepteert `DocusignEmailTemplate__mdt` en `Docusign_Email_Template__mdt`. Heet het type anders, hernoem het of pas de Object Name aan.
+Controleer ook of `RecordTypeDeveloperName__c` **exact** (hoofdlettergevoelig) overeenkomt met de Record Type Name van de Case.
 
-### Het "New record"-formulier toont alleen Label en Name, geen inhoudsvelden
+### Het "New record"-formulier toont alleen Label en Name
 
-De custom velden zijn nog niet aangemaakt op het Custom Metadata Type — vermoedelijk zijn ze per ongeluk als *records* aangemaakt in plaats van als *velden*.
+De custom velden zijn nog niet aangemaakt op het type (vaak per ongeluk als *records* aangemaakt i.p.v. *velden*). Verwijder foutieve records via Manage Records → **Del**, maak de vijf velden aan via de related list **Custom Fields** ([A1b](#a1b--de-vijf-velden-aanmaken)), en probeer **New** opnieuw.
 
-**Oplossing:**
-1. Klik op **Cancel** op het lege record-formulier
-2. Open **Manage Records** en verwijder eventuele records met namen als `ControleurSubject__c`, `ContactBody__c`, etc. (via **Del**)
-3. Ga naar de type-definitiepagina: **Setup → Custom Metadata Types → klik op `Docusign Email Template`**
-4. Maak in de related list **Custom Fields** de vijf velden aan (zie stap A1b)
-5. Ga terug naar **Manage Records → New** — de velden verschijnen nu op het formulier
+### Class opslaan mislukt met "Type name already in use"
 
-### Compile-fout "Variable does not exist: DocusignEmailTemplate__mdt.SObjectType"
+De sandbox heeft nog een oude class (bv. `DocusignCaseQuickActionControllerTest`) die de naam `DocusignCaseConfirmController` bezet.
 
-Een oudere versie van `DocusignEnvelopeService` verwees statisch naar het type. De huidige versie lost het type dynamisch op via `getGlobalDescribe()` en heeft deze statische verwijzing niet meer.
+1. Open die oude class → **Edit**
+2. Vervang de inhoud door `DocusignEnvelopeServiceTest.cls` uit de repo en zet de class-naam bovenaan op `DocusignEnvelopeServiceTest`
+3. **Save**, en sla daarna `DocusignCaseConfirmController` opnieuw op — het conflict is opgelost
 
-**Oplossing:** haal de meest recente `DocusignEnvelopeService.cls` uit GitHub en sla die opnieuw op. De class compileert dan ongeacht of het type bestaat of hoe het heet (`DocusignEmailTemplate__mdt` of `Docusign_Email_Template__mdt`).
+### Validatie/tests falen op de profielnaam
 
-### Class opslaan mislukt met "Type name already in use: DocusignCaseConfirmController"
-
-De sandbox heeft een bestaande class `DocusignCaseQuickActionControllerTest` (van de Sales Nieuw implementatie) die de naam `DocusignCaseConfirmController` al bezet als inner of outer class. Dit conflicteert met onze nieuwe `DocusignCaseConfirmController.cls`.
-
-**Oplossing:**
-1. Ga naar **Setup → Apex Classes** en open `DocusignCaseQuickActionControllerTest`
-2. Klik op **Edit**
-3. Vervang de volledige inhoud door de inhoud van `DocusignEnvelopeServiceTest.cls` uit GitHub
-4. Verander de class-naam bovenaan van `DocusignCaseQuickActionControllerTest` naar `DocusignEnvelopeServiceTest`
-5. Klik op **Save**
-6. Sla daarna `DocusignCaseConfirmController.cls` opnieuw op — het naamconflict is opgelost
-
-### Validatie/tests falen met "List has no rows for assignment to SObject" of profielnaam-fout
-
-De testklasse zoekt het profiel `Standard User`. In Nederlandse orgs heet dit profiel soms anders (bijv. `Standaardgebruiker`).
-
-**Oplossing:** pas in `DocusignEnvelopeServiceTest.cls` (zowel in de sandbox als nadat de fix gedeployed is) regel 20 aan:
+De testklasse zoekt het profiel `Standard User`. In Nederlandse orgs heet dit soms `Standaardgebruiker`. Pas in `DocusignEnvelopeServiceTest.cls` de profielquery aan:
 
 ```apex
 Profile p = [SELECT Id FROM Profile WHERE Name = 'Standaardgebruiker' LIMIT 1];
 ```
 
-Sla de klasse op, voer de tests opnieuw uit en verwerk de fix daarna in een nieuwe Change Set naar productie.
+Sla op, draai de tests opnieuw en neem de fix mee in de Change Set.
 
-### E-mails bevatten generieke teksten in plaats van afdelingsteksten
+### Happy-path test faalt op een dfsle-fout
 
-De service kon geen metadata-record vinden voor het RecordType van de Case.
-
-**Controleer:**
-1. **Setup → Custom Metadata Types → klik op label *Docusign Email Template* → Manage Records** — staat er een record voor deze afdeling?
-2. Open het record en controleer `RecordTypeDeveloperName__c`
-3. Vergelijk de waarde exact (hoofdlettergevoelig) met **Setup → Object Manager → Case → Record Types → [jouw recordtype] → Record Type Name**
-4. Pas de waarde aan als deze niet overeenkomt en sla op — de correctie is direct actief
-
-### Happy-path test faalt met een dfsle-fout
-
-De DocuSign managed package vereist Custom Settings die in een lege testcontext niet altijd aanwezig zijn.
-
-**Wat dit betekent:** de volledige Apex-logica (envelope bouwen, validaties, e-mailteksten ophalen) is gedekt door de negatieve paden en de `loadEmailTemplate`-tests — die raken `dfsle` nooit. Als alleen de happy-path test faalt op een `dfsle`-aanroep, is de functionele code correct en kan de deploy gewoon doorgaan. De Code Coverage-eis van Salesforce (75%) wordt door de overige tests al gehaald.
-
-### De modal opent niet of toont een foutpagina
-
-- Controleer of de Visualforce-pagina `DocusignCaseConfirm` aanwezig is (Setup → Visualforce Pages)
-- Controleer of de Quick Action is aangemaakt met **Action Type: Visualforce Page** en verwijst naar `DocusignCaseConfirm`
-- Controleer of de Quick Action aan de juiste Page Layout is toegevoegd (de layout van het gebruikte Case-recordtype)
+Het DocuSign-package vereist Custom Settings die in een lege testcontext kunnen ontbreken. De volledige bouwlogica (validaties, e-mailteksten, envelope) is gedekt door de negatieve paden en de `loadEmailTemplate`-tests, die `dfsle` nooit raken. Faalt **alleen** de happy-path test op een `dfsle`-aanroep, dan is de functionele code correct en haalt de rest de 75%-dekkingseis; de deploy kan doorgaan.
 
 ### Verzenden mislukt met "Het veld Ter controle van is niet gevuld"
 
-Het veld `Ter_controle_van__c` op de Case is leeg. Vul het in met een actieve Salesforce-gebruiker die een e-mailadres heeft.
+`Ter_controle_van__c` op de Case is leeg. Vul het met een **actieve** gebruiker die een e-mailadres heeft.
 
 ### Verzenden mislukt met "minimaal één PDF"
 
-De DocuSign-handtekening- en initiaal-anchors (`\i1\`, `\s2\`, `\n2\`) staan alleen in de Motrac PDF-template. Selecteer altijd minimaal één PDF-bestand in de modal.
+De handtekening-anchors (`\i1\`, `\s2\`, `\n2\`) staan alleen in de Motrac PDF-template. Selecteer altijd minimaal één PDF in de modal.
+
+### De modal opent niet of toont een foutpagina
+
+Controleer dat de Visualforce-pagina `DocusignCaseConfirm` bestaat, dat de Quick Action **Action Type: Visualforce Page** heeft en naar `DocusignCaseConfirm` verwijst, en dat de actie op de Page Layout van het gebruikte recordtype staat.
 
 ### Change Set upload mislukt met "No deployment connection"
 
-De Deployment Connection tussen de sandbox en de productieomgeving is niet ingesteld.
-
-**Oplossing:** ga in de **productieomgeving** naar **Setup → Deployment Settings**. Zoek de sandbox in de lijst en klik op **Edit**. Vink **Allow Inbound Changes** aan en sla op. Probeer de upload daarna opnieuw vanuit de sandbox.
+De Deployment Connection ontbreekt. Ga in **productie** naar **Setup → Deployment Settings**, klik bij de sandbox op **Edit**, vink **Allow Inbound Changes** aan en sla op. Probeer de upload opnieuw.
