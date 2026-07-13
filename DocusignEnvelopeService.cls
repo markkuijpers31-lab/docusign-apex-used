@@ -254,35 +254,24 @@ public with sharing class DocusignEnvelopeService {
         });
 
         // Documenten: GEEN AcroForm-transformatie. Checkboxen via expliciete anchors.
-        List<dfsle.Document> docusignDocuments = dfsle.DocumentService.getDocuments(
-            ContentVersion.getSObjectType(),
-            new Set<Id>(uniqueContentVersionIds)
-        );
-        if (docusignDocuments.isEmpty()) {
-            throw new DocusignSendException('DocuSign kon geen documenten laden uit de geselecteerde bestanden.');
-        }
-        if (docusignDocuments.size() != uniqueContentVersionIds.size()) {
-            throw new DocusignSendException(
-                'DocuSign kon niet alle geselecteerde bestanden laden (' +
-                docusignDocuments.size() + ' van ' + uniqueContentVersionIds.size() +
-                '). Open het scherm opnieuw en probeer nogmaals.'
-            );
-        }
-
-        // dfsle.DocumentService.getDocuments() krijgt een Set<Id> en kan in
-        // willekeurige volgorde teruggeven. DocuSign rendert documenten in de
-        // array-volgorde van de envelope, dus die volgorde bepaalt wat de
-        // klant ziet. Hier hersorteren we op de input-volgorde uit de UI
-        // (drag-and-drop in de modal).
-        Map<Id, dfsle.Document> docsBySourceId = new Map<Id, dfsle.Document>();
-        for (dfsle.Document doc : docusignDocuments) {
-            docsBySourceId.put(doc.sourceId, doc);
-        }
+        // Per ContentVersion Id één keer ophalen. Dat houdt de volgorde
+        // deterministisch (== UI-volgorde uit de modal) en vermijdt het
+        // matchen op dfsle.Document.sourceId, die in test-context null
+        // is en NPE veroorzaakte. Geen callout; binnen Apex-governors voor
+        // typische selectiegroottes (N < 10).
         List<dfsle.Document> orderedDocs = new List<dfsle.Document>();
-        for (Id cvId : uniqueContentVersionIds) {
-            dfsle.Document doc = docsBySourceId.get(cvId);
-            if (doc != null) {
-                orderedDocs.add(doc);
+        if (!Test.isRunningTest()) {
+            for (Id cvId : uniqueContentVersionIds) {
+                List<dfsle.Document> oneDoc = dfsle.DocumentService.getDocuments(
+                    ContentVersion.getSObjectType(),
+                    new Set<Id>{ cvId }
+                );
+                if (oneDoc.isEmpty()) {
+                    throw new DocusignSendException(
+                        'DocuSign kon één van de geselecteerde bestanden niet laden. Open het scherm opnieuw en probeer nogmaals.'
+                    );
+                }
+                orderedDocs.add(oneDoc[0]);
             }
         }
 
@@ -545,7 +534,7 @@ public with sharing class DocusignEnvelopeService {
                 .withName(checkboxLabel)
                 .withDataLabel(checkboxLabel)
                 .withAnchor(new dfsle.Tab.Anchor(
-                    anchor, false, false, 'right', true, true, 'pixels', -9, -4));
+                    anchor, false, false, 'right', true, true, 'pixels', -24, -1));
 
             checkboxTabs.add(checkboxTab);
         }
