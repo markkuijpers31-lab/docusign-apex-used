@@ -8,12 +8,13 @@ private class DocusignEnvelopeServiceTest {
      *    in via validation rules of required fields? Voeg die hier toe bij de inserts.
      * 3. Ter_controle_van__c moet een User-lookup zijn op Case.
      *
-     * De callout naar DocuSign wordt in de service overgeslagen via
-     * Test.isRunningTest(). buildEnvelope() roept wel dfsle-bouwmethodes aan
-     * (getEmptyEnvelope, getDocuments). Als jouw DFSLE-package custom settings
-     * vereist die in een lege testcontext ontbreken, kan de happy-path test
-     * falen op die dfsle-call. De negatieve paden raken dfsle nooit en zijn
-     * dus altijd betrouwbaar.
+     * De callout naar DocuSign en het ophalen van documenten worden in de
+     * service overgeslagen via Test.isRunningTest(). buildEnvelope() roept in
+     * testcontext dus GEEN dfsle.DocumentService.getDocuments aan (dat zou in
+     * een lege testorg falen); wel de lichte bouwmethode getEmptyEnvelope.
+     * Het document-ophalen en de bijbehorende volgorde-logica draaien daarom
+     * alleen op productie/sandbox en zijn bewust niet door unit tests gedekt.
+     * De negatieve paden raken dfsle nooit en zijn altijd betrouwbaar.
      */
 
     private static User makeControleur(Boolean active, Boolean withEmail) {
